@@ -1903,42 +1903,89 @@ async function changePassword(){
 // ══════════════════════════════════════════
 var chatChars = [];        // [{id,name,desc,color,lastMsg,time}]
 var activeChatChar = null; // current character id
-var chatHistory = {};      // {charId: [{role,content}]}
+var chatHistory = {};      // {charId: [{role,content}]}  — in-memory cache
 var chatInFlight = false;
 var chatInitDone = false;
 var selectedCharColor = '#624BFF';
 var chatMode = 'story';
 
 var DEFAULT_CHARS = [
-  {id:'char_xiaoli',name:'Xiaoli',desc:'一位神秘而温柔的东方美女，擅长诗意的对话',color:'#ec4899',lastMsg:'*My fingers tan...',time:'2026年6月4日 下午08:48'},
-  {id:'char_xi',name:'Xi',desc:'宋平——智慧而幽默的哲学家，喜欢探讨人生',color:'#624BFF',lastMsg:'宋平',time:'2026年5月30日 下午02:52'},
+  {id:'char_xiaoli',name:'Xiaoli',description:'一位神秘而温柔的东方美女，擅长诗意的对话',color:'#ec4899',origin:'system',status:'active'},
+  {id:'char_xi',name:'Xi',description:'宋平——智慧而幽默的哲学家，喜欢探讨人生',color:'#624BFF',origin:'system',status:'active'},
 ];
 
-function initChat(){
+async function initChat(){
   if(chatInitDone) return;
   chatInitDone = true;
-  // 从 localStorage 读取角色列表
-  try{
-    var saved = localStorage.getItem('pc_chat_chars');
-    chatChars = saved ? JSON.parse(saved) : DEFAULT_CHARS.slice();
-    var savedH = localStorage.getItem('pc_chat_history');
-    chatHistory = savedH ? JSON.parse(savedH) : {};
-  } catch(e){
-    chatChars = DEFAULT_CHARS.slice();
-    chatHistory = {};
-  }
+  await loadChatCharsFromDB();
   renderChatCharList();
 }
 
-function saveChatData(){
+// ── 从 DB 加载当前用户的角色列表 ──
+async function loadChatCharsFromDB(){
+  if(!currentUser) return;
   try{
-    localStorage.setItem('pc_chat_chars', JSON.stringify(chatChars));
-    var histCopy = {};
-    chatChars.forEach(function(c){
-      if(chatHistory[c.id]) histCopy[c.id] = chatHistory[c.id].slice(-40);
+    // 系统角色 + 本用户创建的角色
+    var rows = await sGet('chat_characters?or=(origin.eq.system,creator.eq.'+encodeURIComponent(currentUser.username)+')&status=eq.active&order=created_at.asc');
+    if(rows && rows.length){
+      chatChars = rows.map(function(r){
+        return {id:r.id,name:r.name,description:r.description||'',color:r.color||'#624BFF',origin:r.origin,lastMsg:'',time:''};
+      });
+      // 为每个角色加载最新一条消息作为预览
+      for(var i=0;i<chatChars.length;i++){
+        var c=chatChars[i];
+        try{
+          var last = await sGet('chat_messages?username=eq.'+encodeURIComponent(currentUser.username)+'&char_id=eq.'+encodeURIComponent(c.id)+'&order=created_at.desc&limit=1');
+          if(last&&last.length){ c.lastMsg=last[0].content.slice(0,30); c.time=last[0].created_at?last[0].created_at.slice(0,16).replace('T',' '):''; }
+        }catch(e){}
+      }
+    } else {
+      // 首次使用——写入默认系统角色
+      chatChars = [];
+      for(var j=0;j<DEFAULT_CHARS.length;j++){
+        var dc=DEFAULT_CHARS[j];
+        try{
+          await sPost('chat_characters',{id:dc.id,name:dc.name,description:dc.description,color:dc.color,creator:currentUser.username,origin:'system',status:'active'});
+        }catch(e){}
+        chatChars.push({id:dc.id,name:dc.name,description:dc.description,color:dc.color,origin:'system',lastMsg:'',time:''});
+      }
+    }
+  } catch(e){
+    console.warn('loadChatCharsFromDB failed:', e.message);
+    chatChars = DEFAULT_CHARS.map(function(d){ return Object.assign({},d,{lastMsg:'',time:''}); });
+  }
+}
+
+// ── 从 DB 加载某角色的历史记录 ──
+async function loadChatHistoryFromDB(charId){
+  if(!currentUser) return [];
+  try{
+    var rows = await sGet('chat_messages?username=eq.'+encodeURIComponent(currentUser.username)+'&char_id=eq.'+encodeURIComponent(charId)+'&order=created_at.asc&limit=60');
+    return (rows||[]).map(function(r){ return {role:r.role,content:r.content}; });
+  } catch(e){ return []; }
+}
+
+// ── 保存单条消息到 DB ──
+async function saveMsgToDB(charId, charName, role, content){
+  if(!currentUser) return;
+  try{
+    await sPost('chat_messages',{
+      user_id:  currentUser.id,
+      username: currentUser.username,
+      char_id:  charId,
+      char_name:charName,
+      role:     role,
+      content:  content,
+      chat_mode:chatMode
     });
-    localStorage.setItem('pc_chat_history', JSON.stringify(histCopy));
-  } catch(e){}
+  } catch(e){ console.warn('saveMsgToDB failed:', e.message); }
+}
+
+// ── 保存角色到 DB ──
+async function saveCharToDB(char){
+  try{
+    await sPost('chat_characters',{id:char.id,name:char.name,description:char.description||'',color:char.color||'#624BFF',creator:currentUser.username,origin:'user',status:'active'});
+  } catch(e){ console.warn('saveCharToDB:', e.message); }
 }
 
 function renderChatCharList(){
@@ -1959,25 +2006,26 @@ function renderChatCharList(){
   }).join('');
 }
 
-function selectChar(id){
+async function selectChar(id){
   activeChatChar = id;
   var char = chatChars.find(function(c){ return c.id===id; });
   if(!char) return;
   renderChatCharList();
-  // Show active area
   var noSel = el('chatNoSelect');
   var active = el('chatActiveArea');
   if(noSel) noSel.style.display='none';
   if(active){ active.style.display='flex'; active.style.flexDirection='column'; }
-  // Render messages
-  renderChatMessages(id, char);
+  // 从 DB 加载历史记录
+  var hist = await loadChatHistoryFromDB(id);
+  chatHistory[id] = hist;
+  renderChatMessages(id, char, hist);
 }
 
-function renderChatMessages(id, char){
+function renderChatMessages(id, char, hist){
   var msgs = el('chatMessages');
   if(!msgs) return;
   msgs.innerHTML = '';
-  var hist = chatHistory[id] || [];
+  hist = hist || chatHistory[id] || [];
   if(!hist.length){
     // Greeting
     var greeting = '*' + char.name + ' 向你微微一笑*
@@ -2044,6 +2092,7 @@ async function sendChat(){
   if(!chatHistory[activeChatChar]) chatHistory[activeChatChar]=[];
   chatHistory[activeChatChar].push({role:'user',content:text});
   appendChatBubble('user', text, char);
+  saveMsgToDB(activeChatChar, char.name, 'user', text);
 
   chatInFlight = true;
   el('chatSendBtn').disabled = true;
@@ -2052,7 +2101,7 @@ async function sendChat(){
   try{
     var isStory = chatMode==='story';
     var scenario = (el('chatScenario')&&el('chatScenario').value.trim()) || '';
-    var sysPrompt = '你正在扮演一个名叫「'+char.name+'」的角色。角色描述：'+(char.desc||'一个有趣的AI伴侣。')
+    var sysPrompt = '你正在扮演一个名叫「'+char.name+'」的角色。角色描述：'+(char.description||'一个有趣的AI伴侣。')
       +(scenario?'
 当前场景：'+scenario:'')
       +'
@@ -2074,11 +2123,11 @@ async function sendChat(){
     removeTypingIndicator();
     chatHistory[activeChatChar].push({role:'assistant',content:reply});
     appendChatBubble('ai', reply, char);
+    saveMsgToDB(activeChatChar, char.name, 'assistant', reply);
     // update preview
     char.lastMsg = reply.replace(/<[^>]+>/g,'').slice(0,30);
     char.time = new Date().toLocaleString('zh-CN',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
     renderChatCharList();
-    saveChatData();
   } catch(e){
     removeTypingIndicator();
     appendChatBubble('ai','⚠️ 连接失败，请稍后再试。', char);
@@ -2097,7 +2146,6 @@ function clearChatMessages(){
   if(char){ appendChatBubble('ai','*'+char.name+' 微笑着重新开始*
 
 你好！有什么我能为你做的吗？',char); }
-  saveChatData();
 }
 
 function clearAllChats(){
@@ -2106,11 +2154,10 @@ function clearAllChats(){
   renderChatCharList();
   var msgs=el('chatMessages');
   if(msgs) msgs.innerHTML='';
-  saveChatData();
   showToast('success','所有对话已清空');
 }
 
-function removeChar(id){
+async function removeChar(id){
   chatChars=chatChars.filter(function(c){return c.id!==id;});
   delete chatHistory[id];
   if(activeChatChar===id){
@@ -2120,7 +2167,7 @@ function removeChar(id){
     if(active) active.style.display='none';
   }
   renderChatCharList();
-  saveChatData();
+  try{ await sPatch('chat_characters',{id:id},{status:'deleted'}); } catch(e){}
 }
 
 function setChatMode(mode){
@@ -2142,14 +2189,14 @@ function selectCharColor(div,color){
   div.style.border='2px solid #fff';
 }
 
-function saveNewChar(){
+async function saveNewChar(){
   var name=(el('newCharName').value||'').trim();
   var desc=(el('newCharDesc').value||'').trim();
   if(!name){ showToast('error','请输入角色名称'); return; }
-  var char={id:'char_'+Date.now(),name:name,desc:desc,color:selectedCharColor,lastMsg:'',time:''};
+  var char={id:'char_'+Date.now(),name:name,description:desc,color:selectedCharColor,origin:'user',lastMsg:'',time:''};
+  await saveCharToDB(char);
   chatChars.unshift(char);
   renderChatCharList();
-  saveChatData();
   closeModal('createCharModal');
   el('newCharName').value=''; el('newCharDesc').value='';
   showToast('success','角色「'+name+'」已创建！');
