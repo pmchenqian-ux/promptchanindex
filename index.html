@@ -1,0 +1,1517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Promptchan · 创作平台</title>
+<link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+<style>
+:root {
+  --bg:#0A0A0C; --surface:#0d0b14; --surface2:#171420;
+  --card:#1a1726; --card2:#221F2C; --border:#1d1a26; --border2:#2c2938;
+  --purple:#624BFF; --purple-lt:#8b72ff; --purple-dk:#4836cc;
+  --text:#e8e5ff; --muted:#B9B9C3; --green:#22c55e; --red:#ef4444;
+  --yellow:#f59e0b; --cyan:#06b6d4; --pink:#ec4899;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+input,textarea,select{font-family:inherit}
+button{font-family:inherit;cursor:pointer}
+
+/* AUTH */
+#authOverlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center}
+.auth-box{background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:36px 40px;width:400px;max-width:95vw;box-shadow:0 24px 80px rgba(0,0,0,.7)}
+.auth-logo{display:flex;align-items:center;gap:10px;margin-bottom:28px;justify-content:center}
+.auth-logo-icon{width:40px;height:40px;border-radius:10px;background:var(--purple);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff}
+.auth-logo-text{font-size:22px;font-weight:900;color:var(--text)}
+.auth-tabs{display:flex;gap:0;background:var(--card2);border-radius:10px;padding:3px;margin-bottom:24px}
+.auth-tab{flex:1;padding:8px 0;text-align:center;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .18s;border:none;background:none}
+.auth-tab.active{background:var(--purple);color:#fff}
+.auth-field{margin-bottom:14px}
+.auth-field label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px;font-weight:600}
+.auth-field input{width:100%;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:10px 14px;font-size:13px;color:var(--text);outline:none;transition:border-color .18s}
+.auth-field input:focus{border-color:var(--purple)}
+.auth-field input::placeholder{color:var(--muted)}
+.auth-btn{width:100%;background:var(--purple);border:none;color:#fff;border-radius:9px;padding:12px;font-size:14px;font-weight:700;margin-top:8px;transition:background .18s}
+.auth-btn:hover{background:var(--purple-lt)}
+.auth-err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:9px 12px;font-size:12px;color:#f87171;margin-bottom:12px;display:none}
+.auth-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:9px 12px;font-size:12px;color:#4ade80;margin-bottom:12px;display:none}
+.auth-divider{text-align:center;color:var(--muted);font-size:12px;margin:14px 0}
+
+/* TOPBAR */
+#topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:100}
+.tb-logo{font-size:20px;font-weight:900;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:8px}
+.tb-logo-icon{width:28px;height:28px;border-radius:7px;background:var(--purple);display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.tb-nav{display:flex;align-items:center;gap:4px}
+.tb-nav-item{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;transition:all .18s}
+.tb-nav-item:hover{background:var(--card2);color:var(--text)}
+.tb-nav-item.active{background:rgba(98,75,255,.15);color:#b09fff}
+.tb-search{display:flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:6px 12px}
+.tb-search input{background:none;border:none;outline:none;color:var(--text);font-size:13px;width:160px}
+.tb-search input::placeholder{color:var(--muted)}
+.tb-right{display:flex;align-items:center;gap:10px}
+.credits-pill{display:flex;align-items:center;gap:5px;background:var(--card2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer}
+.credits-pill i{color:var(--purple)}
+.avatar-btn{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--purple-lt));display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700;font-size:13px;color:#fff;position:relative}
+.user-dropdown{position:absolute;top:44px;right:0;background:var(--surface);border:1px solid var(--border2);border-radius:12px;width:200px;padding:8px;box-shadow:0 12px 36px rgba(0,0,0,.5);display:none;z-index:200}
+.user-dropdown.open{display:block}
+.dd-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;transition:all .15s}
+.dd-item:hover{background:var(--card2);color:var(--text)}
+.dd-sep{border-top:1px solid var(--border);margin:4px 0}
+
+/* PAGES */
+.page{display:none;min-height:calc(100vh - 56px)}
+.page.active{display:block}
+
+/* EXPLORE */
+.filter-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:16px 24px;border-bottom:1px solid var(--border)}
+.filter-pill{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:none;color:var(--muted);transition:all .18s}
+.filter-pill:hover{color:var(--text);background:var(--card2)}
+.filter-pill.active{background:#fff;color:#000;border-color:#fff}
+.explore-grid{columns:4;column-gap:12px;padding:20px 24px}
+.explore-card{break-inside:avoid;margin-bottom:12px;border-radius:12px;overflow:hidden;background:var(--card);border:1px solid var(--border);cursor:pointer;transition:transform .2s,box-shadow .2s;position:relative}
+.explore-card:hover{transform:translateY(-3px);box-shadow:0 12px 36px rgba(0,0,0,.4)}
+.explore-card img{width:100%;display:block;object-fit:cover}
+.card-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.8) 0%,transparent 55%);opacity:0;transition:opacity .2s;display:flex;flex-direction:column;justify-content:flex-end;padding:12px}
+.explore-card:hover .card-overlay{opacity:1}
+.card-title{font-size:12px;font-weight:700;margin-bottom:4px}
+.card-meta{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--muted)}
+.card-badge{position:absolute;top:8px;left:8px;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700}
+.paid-lock{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.paid-lock i{font-size:24px;color:#fff}
+.paid-lock span{font-size:12px;color:var(--muted)}
+.paid-lock button{background:var(--purple);border:none;color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700}
+@media(max-width:1100px){.explore-grid{columns:3}}
+@media(max-width:700px){.explore-grid{columns:2}}
+@media(max-width:400px){.explore-grid{columns:1}}
+
+/* EMPTY */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;color:var(--muted);text-align:center}
+.empty-state i{font-size:40px;opacity:.3;margin-bottom:14px;display:block}
+.empty-state h3{font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px}
+.empty-state p{font-size:13px;line-height:1.6;max-width:300px}
+
+/* CREATE */
+.create-layout{display:grid;grid-template-columns:340px 1fr;min-height:calc(100vh - 56px)}
+.create-left{background:var(--surface);border-right:1px solid var(--border);padding:20px;overflow-y:auto;height:calc(100vh - 56px);position:sticky;top:56px}
+.create-right{padding:24px;display:flex;flex-direction:column;gap:0}
+.mode-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+.mode-btn{display:flex;align-items:center;gap:6px;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid var(--border2);background:none;color:var(--muted);cursor:pointer;transition:all .18s}
+.mode-btn:hover{color:var(--text);background:var(--card2)}
+.mode-btn.active{border-color:var(--purple);background:rgba(98,75,255,.14);color:#b09fff}
+.cs-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;display:block}
+.cs-section{margin-bottom:18px}
+.prompt-area{width:100%;background:var(--card2);border:1px solid var(--border2);border-radius:10px;padding:12px;font-size:13px;color:var(--text);outline:none;resize:none;transition:border-color .18s;min-height:90px}
+.prompt-area:focus{border-color:var(--purple)}
+.prompt-area::placeholder{color:var(--muted)}
+.form-input{width:100%;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 12px;font-size:13px;color:var(--text);outline:none;transition:border-color .18s}
+.form-input:focus{border-color:var(--purple)}
+.form-select{width:100%;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:9px 12px;font-size:13px;color:var(--text);outline:none;cursor:pointer}
+.form-select:focus{border-color:var(--purple)}
+.tag-row{display:flex;flex-wrap:wrap;gap:5px}
+.tag-chip{font-size:11px;padding:3px 10px;background:var(--card2);border:1px solid var(--border2);border-radius:20px;cursor:pointer;color:var(--muted);transition:all .18s}
+.tag-chip:hover{border-color:var(--purple);color:#b09fff}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .18s}
+.btn-primary{background:var(--purple);color:#fff}
+.btn-primary:hover{background:var(--purple-lt)}
+.btn-ghost{background:var(--card2);color:var(--muted);border:1px solid var(--border2)}
+.btn-ghost:hover{color:var(--text)}
+.btn-green{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.25)}
+.btn-green:hover{background:rgba(34,197,94,.25)}
+.gen-btn{width:100%;background:var(--purple);border:none;color:#fff;border-radius:10px;padding:13px;font-size:14px;font-weight:700;transition:background .18s;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
+.gen-btn:hover:not(:disabled){background:var(--purple-lt)}
+.gen-btn:disabled{background:var(--card2);color:var(--muted);cursor:not-allowed}
+.upload-zone{border:2px dashed var(--border2);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all .18s;position:relative}
+.upload-zone:hover{border-color:var(--purple);background:rgba(98,75,255,.05)}
+.upload-zone i{font-size:24px;color:var(--muted);display:block;margin-bottom:8px}
+.upload-zone p{font-size:12px;color:var(--muted)}
+.upload-preview{width:100%;border-radius:8px;max-height:140px;object-fit:cover;display:none;margin-top:8px}
+.result-area{flex:1;background:var(--card);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:420px;position:relative;overflow:hidden}
+.result-placeholder{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
+.result-placeholder i{font-size:36px;opacity:.3}
+.result-placeholder p{font-size:13px}
+.gen-progress-track{height:4px;background:var(--card2);border-radius:2px;overflow:hidden;margin-top:10px}
+.gen-progress-bar{height:100%;background:var(--purple);border-radius:2px;transition:width .3s;width:0%}
+.result-actions{display:none;gap:8px;padding:16px;flex-wrap:wrap;justify-content:center;border-top:1px solid var(--border)}
+.pending-notice{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:10px 14px;font-size:12px;color:#fbbf24;display:flex;align-items:flex-start;gap:8px;margin:0 0 16px}
+
+/* MY WORKS */
+.my-works-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:12px}
+.wft-btn{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--border2);background:none;color:var(--muted);cursor:pointer;transition:all .18s}
+.wft-btn.active{border-color:var(--purple);background:rgba(98,75,255,.14);color:#b09fff}
+.works-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:20px 24px}
+.work-card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;transition:all .2s;position:relative}
+.work-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.work-img-wrap{position:relative;width:100%;padding-top:125%;background:var(--surface2)}
+.work-img-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.work-status-badge{position:absolute;top:8px;left:8px;font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700}
+.s-pending{background:rgba(245,158,11,.9);color:#000}
+.s-approved{background:rgba(34,197,94,.9);color:#000}
+.s-rejected{background:rgba(239,68,68,.9);color:#fff}
+.s-published{background:rgba(98,75,255,.9);color:#fff}
+.work-info{padding:10px 12px}
+.work-title{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px}
+.work-meta{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px}
+
+/* MATERIALS */
+.mat-header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
+.mat-src-tabs{display:flex;gap:0;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin:16px 24px 0}
+.mat-src-tab{flex:1;padding:10px 0;text-align:center;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;border:none;background:none;transition:all .18s}
+.mat-src-tab.active{background:var(--purple);color:#fff}
+.mat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;padding:16px 24px}
+.mat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;cursor:pointer;transition:all .2s;position:relative}
+.mat-card:hover{border-color:var(--purple);transform:translateY(-2px)}
+.mat-img-wrap{position:relative;width:100%;padding-top:125%;background:var(--surface2)}
+.mat-img-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mat-info{padding:8px 10px}
+.mat-title{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mat-meta{font-size:10px;color:var(--muted);margin-top:2px}
+.mat-badge{position:absolute;top:6px;left:6px;font-size:9px;padding:2px 6px;border-radius:20px;font-weight:700}
+
+/* PROFILE */
+.profile-layout{max-width:700px;margin:0 auto;padding:32px 24px}
+.profile-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:20px}
+.profile-card h3{font-size:14px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.profile-avatar{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--purple-lt));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;flex-shrink:0}
+.profile-field{margin-bottom:12px}
+.profile-field label{font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px}
+.plan-card{background:linear-gradient(135deg,rgba(98,75,255,.12),rgba(139,114,255,.04));border:1px solid rgba(98,75,255,.25);border-radius:12px;padding:20px}
+.upgrade-btn{background:var(--purple);border:none;color:#fff;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;margin-top:14px;display:inline-flex;align-items:center;gap:6px}
+.upgrade-btn:hover{background:var(--purple-lt)}
+
+/* TOAST */
+#toastContainer{position:fixed;bottom:24px;right:24px;z-index:9998;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);animation:slideIn .3s ease;pointer-events:auto;max-width:320px}
+.toast.success{border-color:rgba(34,197,94,.3)}
+.toast.error{border-color:rgba(239,68,68,.3)}
+.toast.success i{color:var(--green)}
+.toast.error i{color:var(--red)}
+.toast.info i{color:var(--cyan)}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes slideOut{from{transform:translateX(0);opacity:1}to{transform:translateX(100%);opacity:0}}
+
+/* MODAL */
+.modal{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center}
+.modal.open{display:flex}
+.modal-inner{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:28px;width:480px;max-width:95vw;max-height:88vh;overflow-y:auto;position:relative}
+.modal-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+
+/* DB LOADING */
+#dbLoadingOverlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+.db-spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--purple);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+input[type=range]{-webkit-appearance:none;width:100%;height:4px;background:#332f3f;border-radius:4px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--purple);cursor:pointer;border:2px solid #fff}
+select option{background:var(--card2)}
+</style>
+</head>
+<body>
+
+<!-- DB Loading Overlay -->
+<div id="dbLoadingOverlay">
+  <div class="db-spinner"></div>
+  <div style="font-size:13px;color:var(--muted)" id="dbLoadTxt">正在连接数据库…</div>
+</div>
+
+<!-- Auth Overlay -->
+<div id="authOverlay">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="auth-logo-icon"><i class="fa fa-magic"></i></div>
+      <div class="auth-logo-text">Promptchan</div>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">注册</button>
+    </div>
+    <div id="authErr" class="auth-err"></div>
+    <div id="authSuccess" class="auth-success"></div>
+    <div id="loginForm">
+      <div class="auth-field"><label>邮箱</label><input type="email" id="loginEmail" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="auth-field"><label>密码</label><input type="password" id="loginPwd" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="auth-btn" onclick="doLogin()"><i class="fa fa-sign-in"></i> 登录</button>
+      <div class="auth-divider">还没有账号？<span style="color:var(--purple);cursor:pointer" onclick="switchAuthTab('register')">立即注册</span></div>
+    </div>
+    <div id="registerForm" style="display:none">
+      <div class="auth-field"><label>用户名</label><input type="text" id="regName" placeholder="coolcreator" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <div class="auth-field"><label>邮箱</label><input type="email" id="regEmail" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <div class="auth-field"><label>密码</label><input type="password" id="regPwd" placeholder="至少6位" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <button class="auth-btn" onclick="doRegister()"><i class="fa fa-user-plus"></i> 注册账号</button>
+      <div class="auth-divider">已有账号？<span style="color:var(--purple);cursor:pointer" onclick="switchAuthTab('login')">去登录</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Topbar -->
+<header id="topbar" style="display:none">
+  <div class="tb-logo" onclick="showPage('explore')">
+    <div class="tb-logo-icon"><i class="fa fa-magic"></i></div>
+    Promptchan
+  </div>
+  <div class="tb-nav">
+    <div class="tb-nav-item active" id="nav-explore" onclick="showPage('explore')"><i class="fa fa-th-large"></i> 探索</div>
+    <div class="tb-nav-item" id="nav-create" onclick="showPage('create')"><i class="fa fa-pencil-square-o"></i> 创作</div>
+    <div class="tb-nav-item" id="nav-myworks" onclick="showPage('myworks')"><i class="fa fa-heart-o"></i> 我的作品</div>
+    <div class="tb-nav-item" id="nav-materials" onclick="showPage('materials')"><i class="fa fa-database"></i> 素材库</div>
+  </div>
+  <div class="tb-search">
+    <i class="fa fa-search" style="color:var(--muted);font-size:12px"></i>
+    <input type="text" placeholder="搜索作品…" id="searchInput" oninput="renderExplore()">
+  </div>
+  <div class="tb-right">
+    <div class="credits-pill">
+      <i class="fa fa-diamond"></i>
+      <span id="creditsDisplay">0</span> 积分
+    </div>
+    <div style="position:relative">
+      <div class="avatar-btn" id="avatarBtn" onclick="toggleDropdown()">
+        <span id="avatarInitial">?</span>
+      </div>
+      <div class="user-dropdown" id="userDropdown">
+        <div style="padding:8px 10px 8px;border-bottom:1px solid var(--border);margin-bottom:4px">
+          <div style="font-weight:700;font-size:13px" id="ddUsername">—</div>
+          <div style="font-size:11px;color:var(--muted)" id="ddEmail">—</div>
+          <div style="font-size:10px;background:rgba(98,75,255,.2);color:#b09fff;border-radius:20px;padding:2px 8px;display:inline-block;margin-top:4px;font-weight:700" id="ddPlan">免费版</div>
+        </div>
+        <div class="dd-item" onclick="showPage('profile');toggleDropdown()"><i class="fa fa-user-o"></i> 个人资料</div>
+        <div class="dd-item" onclick="showPage('myworks');toggleDropdown()"><i class="fa fa-th-large"></i> 我的作品</div>
+        <div class="dd-sep"></div>
+        <div class="dd-item" style="color:var(--red)" onclick="doLogout()"><i class="fa fa-sign-out"></i> 退出登录</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ===== EXPLORE PAGE ===== -->
+<div class="page active" id="page-explore">
+  <div class="filter-bar">
+    <button class="filter-pill active" id="fp-trend" onclick="setFilter('trend',this)"><i class="fa fa-fire"></i> 趋势</button>
+    <button class="filter-pill" id="fp-new" onclick="setFilter('new',this)"><i class="fa fa-leaf"></i> 最新</button>
+    <button class="filter-pill" id="fp-admin" onclick="setFilter('admin',this)"><i class="fa fa-shield"></i> 官方精选</button>
+    <button class="filter-pill" id="fp-user" onclick="setFilter('user',this)"><i class="fa fa-users"></i> 用户创作</button>
+    <div style="width:1px;height:24px;background:var(--border2);margin:0 4px"></div>
+    <select class="form-select" style="width:auto;padding:6px 12px;font-size:12px" id="filterType" onchange="renderExplore()">
+      <option value="">所有媒体</option>
+      <option value="image">图片</option>
+      <option value="video">视频</option>
+    </select>
+    <span style="font-size:12px;color:var(--muted);margin-left:auto" id="exploreCount"></span>
+  </div>
+  <div class="explore-grid" id="exploreGrid">
+    <div class="empty-state" style="column-span:all"><div class="db-spinner" style="margin:0 auto"></div></div>
+  </div>
+</div>
+
+<!-- ===== CREATE PAGE ===== -->
+<div class="page" id="page-create">
+  <div class="create-layout">
+    <div class="create-left">
+      <div class="mode-tabs">
+        <button class="mode-btn active" id="modeBtn-txt2img" onclick="setMode('txt2img')"><i class="fa fa-magic"></i> 文生图</button>
+        <button class="mode-btn" id="modeBtn-img2img" onclick="setMode('img2img')"><i class="fa fa-clone"></i> 图生图</button>
+        <button class="mode-btn" id="modeBtn-faceswap" onclick="setMode('faceswap')"><i class="fa fa-user-circle"></i> 换脸</button>
+        <button class="mode-btn" id="modeBtn-upload" onclick="setMode('upload')"><i class="fa fa-cloud-upload"></i> 上传</button>
+      </div>
+
+      <!-- TXT2IMG panel -->
+      <div id="panel-txt2img">
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-align-left"></i> 提示词</span>
+          <textarea class="prompt-area" id="promptInput" rows="4" placeholder="描述你想要生成的图像…例如：动漫少女，写实风格，精致面孔，粉色头发"></textarea>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="magicEnhance()"><i class="fa fa-magic"></i> 魔法增强</button>
+            <button class="btn btn-ghost" style="font-size:12px" onclick="clearPrompt()"><i class="fa fa-times"></i></button>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-tag"></i> 快捷标签</span>
+          <div class="tag-row">
+            <span class="tag-chip" onclick="addTag(this)">Anime</span>
+            <span class="tag-chip" onclick="addTag(this)">Realistic</span>
+            <span class="tag-chip" onclick="addTag(this)">Fantasy</span>
+            <span class="tag-chip" onclick="addTag(this)">Cyberpunk</span>
+            <span class="tag-chip" onclick="addTag(this)">Idol</span>
+            <span class="tag-chip" onclick="addTag(this)">Kimono</span>
+            <span class="tag-chip" onclick="addTag(this)">Ultra-detailed</span>
+            <span class="tag-chip" onclick="addTag(this)">8K</span>
+            <span class="tag-chip" onclick="addTag(this)">Bokeh</span>
+            <span class="tag-chip" onclick="addTag(this)">Watercolor</span>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-paint-brush"></i> 风格</span>
+          <select class="form-select" id="styleSelect">
+            <option value="anime">动漫</option>
+            <option value="realistic">写实</option>
+            <option value="fantasy">奇幻</option>
+            <option value="cyberpunk">赛博朋克</option>
+            <option value="watercolor">水彩</option>
+            <option value="oil painting">油画</option>
+          </select>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-minus"></i> 负面提示词 <small style="font-weight:400;text-transform:none">(可选)</small></span>
+          <textarea class="prompt-area" id="negPrompt" rows="2" placeholder="不想要的元素…" style="min-height:0"></textarea>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitle" placeholder="给你的创作起个名字…">
+        </div>
+      </div>
+
+      <!-- IMG2IMG panel -->
+      <div id="panel-img2img" style="display:none">
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-image"></i> 参考图片</span>
+          <div class="upload-zone" onclick="document.getElementById('i2i-file').click()">
+            <input type="file" id="i2i-file" accept="image/*" style="display:none" onchange="previewUpload('i2i-preview',this)">
+            <i class="fa fa-cloud-upload"></i><p>点击上传参考图</p>
+          </div>
+          <img id="i2i-preview" class="upload-preview">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-align-left"></i> 提示词</span>
+          <textarea class="prompt-area" id="promptInput2" rows="3" placeholder="描述生成方向…"></textarea>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-paint-brush"></i> 风格</span>
+          <select class="form-select" id="styleSelect2">
+            <option value="anime">动漫</option><option value="realistic">写实</option><option value="fantasy">奇幻</option>
+          </select>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitle2" placeholder="给你的创作起个名字…">
+        </div>
+      </div>
+
+      <!-- FACESWAP panel -->
+      <div id="panel-faceswap" style="display:none">
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-user-circle"></i> 目标脸 (要换成谁)</span>
+          <div class="upload-zone" onclick="document.getElementById('fs-target-file').click()">
+            <input type="file" id="fs-target-file" accept="image/*" style="display:none" onchange="previewUpload('fs-target-preview',this)">
+            <i class="fa fa-user"></i><p>上传目标人脸</p>
+          </div>
+          <img id="fs-target-preview" class="upload-preview">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-image"></i> 底图 (换到哪张图上)</span>
+          <div class="upload-zone" onclick="document.getElementById('fs-source-file').click()">
+            <input type="file" id="fs-source-file" accept="image/*" style="display:none" onchange="previewUpload('fs-source-preview',this)">
+            <i class="fa fa-picture-o"></i><p>上传底图</p>
+          </div>
+          <img id="fs-source-preview" class="upload-preview">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitle3" placeholder="给你的创作起个名字…">
+        </div>
+      </div>
+
+      <!-- UPLOAD panel -->
+      <div id="panel-upload" style="display:none">
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-cloud-upload"></i> 上传作品</span>
+          <div class="upload-zone" onclick="document.getElementById('up-file').click()">
+            <input type="file" id="up-file" accept="image/*,video/*" style="display:none" onchange="previewUpload('up-preview',this)">
+            <i class="fa fa-cloud-upload"></i>
+            <p>点击上传图片或视频</p>
+            <p style="font-size:10px;margin-top:4px">支持 JPG/PNG/MP4，最大 20MB</p>
+          </div>
+          <img id="up-preview" class="upload-preview">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitleUp" placeholder="给你的作品起个名字…">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-align-left"></i> 描述</span>
+          <textarea class="prompt-area" id="upDesc" rows="3" placeholder="作品描述、创作背景…"></textarea>
+        </div>
+      </div>
+
+      <button class="gen-btn" id="genBtn" onclick="startGenerate()">
+        <i class="fa fa-magic" id="genIcon"></i>
+        <span id="genLabel">开始生成</span>
+      </button>
+    </div>
+
+    <!-- Right: Result -->
+    <div class="create-right">
+      <div class="result-area" id="resultArea">
+        <div id="resultPlaceholder" class="result-placeholder">
+          <i class="fa fa-image"></i>
+          <p>设置参数后点击生成</p>
+          <p style="font-size:11px;margin-top:4px">生成的作品需要提交审核</p>
+        </div>
+        <div id="genProgressWrap" style="display:none;text-align:center;padding:40px 20px;width:100%">
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px" id="genStepLabel">正在准备…</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px" id="genStepSub">请稍候</div>
+          <div style="width:280px;margin:0 auto">
+            <div class="gen-progress-track">
+              <div class="gen-progress-bar" id="genProgressBar"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:5px;font-size:11px;color:var(--muted)">
+              <span id="genPct">0%</span>
+            </div>
+          </div>
+          <button class="btn btn-ghost" style="margin-top:16px;font-size:12px" onclick="cancelGenerate()"><i class="fa fa-stop"></i> 取消</button>
+        </div>
+        <img id="resultImg" style="display:none;max-width:90%;max-height:480px;border-radius:10px;object-fit:contain">
+      </div>
+      <div id="resultActions" class="result-actions">
+        <button class="btn btn-green" onclick="submitToReview()"><i class="fa fa-paper-plane"></i> 提交审核</button>
+        <button class="btn btn-ghost" onclick="downloadResult()"><i class="fa fa-download"></i> 下载</button>
+        <button class="btn btn-ghost" onclick="resetResult()"><i class="fa fa-refresh"></i> 重新生成</button>
+      </div>
+      <div id="submitNotice" class="pending-notice" style="display:none">
+        <i class="fa fa-clock-o" style="margin-top:1px;flex-shrink:0"></i>
+        <div>作品已提交审核，管理员审核通过后将公开展示。可在<span style="color:#b09fff;cursor:pointer" onclick="showPage('myworks')">「我的作品」</span>查看审核状态。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MY WORKS PAGE ===== -->
+<div class="page" id="page-myworks">
+  <div class="my-works-header">
+    <div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:4px">我的作品</div>
+      <div style="font-size:12px;color:var(--muted)" id="myWorksCount">加载中…</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="wft-btn active" onclick="setWorksFilter('all',this)">全部</button>
+      <button class="wft-btn" onclick="setWorksFilter('pending',this)">待审核</button>
+      <button class="wft-btn" onclick="setWorksFilter('approved',this)">已通过</button>
+      <button class="wft-btn" onclick="setWorksFilter('published',this)">已发布</button>
+      <button class="wft-btn" onclick="setWorksFilter('rejected',this)">已拒绝</button>
+    </div>
+  </div>
+  <div class="works-grid" id="myWorksGrid">
+    <div class="empty-state" style="grid-column:1/-1"><div class="db-spinner" style="margin:0 auto 12px"></div></div>
+  </div>
+</div>
+
+<!-- ===== MATERIALS PAGE ===== -->
+<div class="page" id="page-materials">
+  <div class="mat-header">
+    <div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:4px">素材库</div>
+      <div style="font-size:12px;color:var(--muted)">浏览可用素材，用作创作参考或生图底图</div>
+    </div>
+  </div>
+  <div class="mat-src-tabs">
+    <button class="mat-src-tab active" id="matTab-admin" onclick="setMatSrc('admin')"><i class="fa fa-shield"></i> 官方素材库</button>
+    <button class="mat-src-tab" id="matTab-user" onclick="setMatSrc('user')"><i class="fa fa-users"></i> 用户素材库</button>
+  </div>
+  <div class="mat-grid" id="matGrid">
+    <div class="empty-state" style="grid-column:1/-1"><div class="db-spinner" style="margin:0 auto 12px"></div></div>
+  </div>
+</div>
+
+<!-- ===== PROFILE PAGE ===== -->
+<div class="page" id="page-profile">
+  <div class="profile-layout">
+    <div style="font-size:22px;font-weight:800;margin-bottom:24px">个人资料</div>
+    <div class="profile-card">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+        <div class="profile-avatar" id="profileAvatar">?</div>
+        <div>
+          <div style="font-size:16px;font-weight:800" id="profileName">—</div>
+          <div style="font-size:12px;color:var(--muted)" id="profileEmailDisplay">—</div>
+          <div style="margin-top:6px;font-size:11px;background:rgba(98,75,255,.2);color:#b09fff;border-radius:20px;padding:2px 10px;display:inline-block;font-weight:700" id="profilePlanBadge">免费版</div>
+        </div>
+      </div>
+      <div class="profile-field">
+        <label>用户名</label>
+        <input type="text" class="form-input" id="editUsername" placeholder="用户名">
+      </div>
+      <div class="profile-field">
+        <label>邮箱 <span style="font-size:10px;color:var(--muted);font-weight:400">(不可修改)</span></label>
+        <input type="text" class="form-input" id="editEmail" disabled style="opacity:.6">
+      </div>
+      <button class="btn btn-primary" style="margin-top:8px" onclick="saveProfile()"><i class="fa fa-save"></i> 保存修改</button>
+    </div>
+    <div class="profile-card">
+      <h3><i class="fa fa-rocket" style="color:var(--purple)"></i> 套餐与积分</h3>
+      <div class="plan-card">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:18px;font-weight:900;margin-bottom:4px" id="planName">免费版</div>
+            <div style="font-size:12px;color:var(--muted)">当前套餐</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:28px;font-weight:900;color:var(--purple-lt)" id="planCredits">—</div>
+            <div style="font-size:11px;color:var(--muted)">剩余积分</div>
+          </div>
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--muted);line-height:1.6">
+          免费版每日赠送 10 积分 · 升级 Pro 获得无限生成次数和更多高级功能
+        </div>
+        <button class="upgrade-btn" onclick="showToast('info','升级功能即将开放，敬请期待！')">
+          <i class="fa fa-rocket"></i> 升级套餐
+        </button>
+      </div>
+    </div>
+    <div class="profile-card">
+      <h3><i class="fa fa-lock" style="color:var(--muted)"></i> 账号安全</h3>
+      <div class="profile-field">
+        <label>新密码</label>
+        <input type="password" class="form-input" id="newPwd" placeholder="留空则不修改">
+      </div>
+      <div class="profile-field">
+        <label>确认新密码</label>
+        <input type="password" class="form-input" id="confirmPwd" placeholder="再次输入新密码">
+      </div>
+      <button class="btn btn-ghost" onclick="changePassword()"><i class="fa fa-lock"></i> 修改密码</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal" id="detailModal" onclick="if(event.target===this)closeModal('detailModal')">
+  <div class="modal-inner" style="width:700px;max-width:96vw;padding:0;border-radius:16px;overflow:hidden">
+    <button class="modal-close" style="top:10px;right:12px;z-index:10;background:rgba(0,0,0,.5);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;color:#fff" onclick="closeModal('detailModal')">×</button>
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;min-height:380px">
+      <div style="background:var(--surface2);display:flex;align-items:center;justify-content:center">
+        <img id="detailImg" src="" style="width:100%;max-height:520px;object-fit:cover;display:block">
+      </div>
+      <div style="padding:24px;overflow-y:auto;max-height:520px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:18px;font-weight:800" id="detailTitle">—</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">
+          <i class="fa fa-user-o"></i><span id="detailCreator">—</span>
+          <span>·</span><span id="detailDate">—</span>
+        </div>
+        <div id="detailStatusBadge"></div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">提示词 / 描述</div>
+          <div style="background:var(--card2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);line-height:1.6;word-break:break-all" id="detailPrompt">—</div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">风格 / 模式</div>
+          <div style="font-size:12px" id="detailStyle">—</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:8px">
+          <button class="btn btn-ghost" onclick="downloadDetailImg()"><i class="fa fa-download"></i> 下载</button>
+          <button class="btn btn-ghost" onclick="closeModal('detailModal')"><i class="fa fa-times"></i> 关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+
+<script>
+// ══════════════════════════════════════════
+//  CONFIG  (同管理端 Supabase / API 配置)
+// ══════════════════════════════════════════
+var SUPA_URL   = 'https://cqiogakbuyvelvrrkcuy.supabase.co';
+var SUPA_KEY   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxaW9nYWtidXl2ZWx2cnJrY3V5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NDcwMDUsImV4cCI6MjA5ODEyMzAwNX0.uxrHyV08DmjjJcs9ROAGGbqMNh7MYpbpCsnoLLWcV5o';
+var API_KEY    = 'sk_dIUijBgz_LroFblQIqCtqYOq1tA8AFXAcnAs1LaYxH0';
+var IMGBB_KEY  = '604bc533d6554cfe31c15b712493b2b5';
+var WORKER_URL = 'https://orange-wind-30f5.wanxin4149.workers.dev';
+var TPLS = {
+  txt2img:'3487741729447088128',
+  img2img:'3487780244406931456',
+  faceswap:'3489601654104264513'
+};
+
+// ══════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════
+var currentUser   = null;
+var ALL_WORKS     = [];
+var MY_WORKS      = [];
+var ADMIN_MATS    = [];
+var USER_MATS     = [];
+var currentFilter = 'trend';
+var worksFilter   = 'all';
+var matSrc        = 'admin';
+var currentMode   = 'txt2img';
+var genCancelled  = false;
+var _pollTimer    = null;
+var _progInterval = null;
+var _lastResult   = null;  // { url, mode }
+
+// ══════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════
+function el(id){ return document.getElementById(id); }
+
+function supaH(){
+  return {
+    'apikey': SUPA_KEY,
+    'Authorization': 'Bearer ' + SUPA_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=representation'
+  };
+}
+
+function sGet(path){
+  return fetch(SUPA_URL + '/rest/v1/' + path, { headers: supaH() })
+    .then(function(r){
+      if(!r.ok) return r.text().then(function(t){ throw new Error(t); });
+      return r.json();
+    });
+}
+
+function sPost(table, data){
+  return fetch(SUPA_URL + '/rest/v1/' + table, {
+    method: 'POST', headers: supaH(), body: JSON.stringify(data)
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t); });
+    return r.json();
+  });
+}
+
+function sPatch(table, match, data){
+  var qs = '?' + Object.keys(match).map(function(k){
+    return k + '=eq.' + encodeURIComponent(match[k]);
+  }).join('&');
+  return fetch(SUPA_URL + '/rest/v1/' + table + qs, {
+    method: 'PATCH', headers: supaH(), body: JSON.stringify(data)
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t); });
+    return r.json();
+  });
+}
+
+function getSession(){
+  try{ var s = localStorage.getItem('pc_user_sess'); return s ? JSON.parse(s) : null; }
+  catch(e){ return null; }
+}
+function setSession(u){ try{ localStorage.setItem('pc_user_sess', JSON.stringify(u)); }catch(e){} }
+function clearSession(){ try{ localStorage.removeItem('pc_user_sess'); }catch(e){} }
+
+// ══════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════
+function showToast(type, msg){
+  var icons = { success:'fa-check-circle', error:'fa-times-circle', info:'fa-info-circle' };
+  var t = document.createElement('div');
+  t.className = 'toast ' + (type || 'info');
+  t.innerHTML = '<i class="fa ' + (icons[type]||'fa-info-circle') + '"></i><span>' + msg + '</span>';
+  el('toastContainer').appendChild(t);
+  setTimeout(function(){
+    t.style.animation = 'slideOut .3s ease forwards';
+    setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, 300);
+  }, 3500);
+}
+
+// ══════════════════════════════════════════
+//  AUTH
+// ══════════════════════════════════════════
+function switchAuthTab(tab){
+  el('tabLogin').classList.toggle('active', tab === 'login');
+  el('tabRegister').classList.toggle('active', tab === 'register');
+  el('loginForm').style.display  = tab === 'login'    ? '' : 'none';
+  el('registerForm').style.display = tab === 'register' ? '' : 'none';
+  el('authErr').style.display     = 'none';
+  el('authSuccess').style.display = 'none';
+}
+
+function authErr(msg){ var e=el('authErr'); e.textContent=msg; e.style.display='block'; el('authSuccess').style.display='none'; }
+function authOk(msg){ var s=el('authSuccess'); s.textContent=msg; s.style.display='block'; el('authErr').style.display='none'; }
+
+async function doLogin(){
+  var email = el('loginEmail').value.trim().toLowerCase();
+  var pwd   = el('loginPwd').value;
+  if(!email || !pwd){ authErr('请填写邮箱和密码'); return; }
+  try{
+    // 先查邮箱是否存在
+    var byEmail = await sGet('platform_users?select=*&email=eq.' + encodeURIComponent(email) + '&limit=1');
+    if(!byEmail || !byEmail.length){
+      authErr('该邮箱未注册，请先注册账号');
+      return;
+    }
+    var u = byEmail[0];
+    // 检查密码字段是否存在
+    if(!('password' in u)){
+      authErr('数据库缺少 password 字段，请先在 Supabase 执行数据库迁移 SQL');
+      return;
+    }
+    // 验证密码
+    if(String(u.password) !== String(pwd)){
+      authErr('密码错误，请重新输入');
+      return;
+    }
+    if(u.status === 'banned'){ authErr('账号已被封禁，请联系管理员'); return; }
+    sPatch('platform_users', {id:u.id}, {last_login: new Date().toISOString().slice(0,10)}).catch(function(){});
+    setSession(u);
+    onLoginSuccess(u);
+  } catch(e){
+    // 解析 Supabase 错误
+    var msg = e.message || '';
+    if(msg.indexOf('password') !== -1 && msg.indexOf('does not exist') !== -1){
+      authErr('数据库缺少 password 字段，请在 Supabase SQL Editor 执行迁移脚本');
+    } else if(msg.indexOf('relation') !== -1 && msg.indexOf('does not exist') !== -1){
+      authErr('数据表不存在，请先执行数据库迁移脚本');
+    } else if(msg.indexOf('JWT') !== -1 || msg.indexOf('apikey') !== -1){
+      authErr('Supabase API Key 错误，请检查配置');
+    } else {
+      authErr('登录失败：' + msg);
+    }
+  }
+}
+
+async function doRegister(){
+  var name  = el('regName').value.trim();
+  var email = el('regEmail').value.trim().toLowerCase();
+  var pwd   = el('regPwd').value;
+  if(!name || !email || !pwd){ authErr('请填写所有字段'); return; }
+  if(pwd.length < 6){ authErr('密码至少需要6位'); return; }
+  if(!/\S+@\S+\.\S+/.test(email)){ authErr('请输入有效邮箱'); return; }
+  try{
+    var ex = await sGet('platform_users?email=eq.' + encodeURIComponent(email) + '&limit=1');
+    if(ex && ex.length){ authErr('该邮箱已注册'); return; }
+    var nc = await sGet('platform_users?username=eq.' + encodeURIComponent(name) + '&limit=1');
+    if(nc && nc.length){ authErr('用户名已被占用'); return; }
+    var now = new Date().toISOString().slice(0,10);
+    var payload = { username:name, email:email, password:pwd, plan:'free',
+      credits:10, status:'active', created_at:now, last_login:now };
+    var res = await sPost('platform_users', payload);
+    var saved = Array.isArray(res) ? res[0] : res;
+    authOk('注册成功！正在登录…');
+    setTimeout(function(){ setSession(saved); onLoginSuccess(saved); }, 800);
+  } catch(e){
+    var msg = e.message || '';
+    if(msg.indexOf('duplicate') !== -1 || msg.indexOf('unique') !== -1){
+      authErr('该邮箱或用户名已被注册');
+    } else if(msg.indexOf('relation') !== -1 && msg.indexOf('does not exist') !== -1){
+      authErr('数据表不存在，请先执行数据库迁移脚本');
+    } else {
+      authErr('注册失败：' + msg);
+    }
+  }
+}
+
+function planLabel(p){
+  if(p === 'pro')     return 'Pro 会员';
+  if(p === 'premium') return 'Premium 会员';
+  return '免费版';
+}
+
+function onLoginSuccess(u){
+  currentUser = u;
+  el('authOverlay').style.display = 'none';
+  el('topbar').style.display = 'flex';
+  var init = (u.username || 'U').slice(0,1).toUpperCase();
+  el('avatarInitial').textContent   = init;
+  el('profileAvatar').textContent   = init;
+  el('ddUsername').textContent      = u.username || '用户';
+  el('ddEmail').textContent         = u.email    || '';
+  el('ddPlan').textContent          = planLabel(u.plan);
+  el('creditsDisplay').textContent  = u.credits  || 0;
+  el('profileName').textContent     = u.username || '—';
+  el('profileEmailDisplay').textContent = u.email || '—';
+  el('editUsername').value          = u.username || '';
+  el('editEmail').value             = u.email    || '';
+  el('planName').textContent        = planLabel(u.plan);
+  el('planCredits').textContent     = u.credits  || 0;
+  el('profilePlanBadge').textContent = planLabel(u.plan);
+  showPage('explore');
+  loadData();
+}
+
+function doLogout(){
+  clearSession();
+  currentUser = null;
+  ALL_WORKS = []; MY_WORKS = []; ADMIN_MATS = []; USER_MATS = [];
+  el('topbar').style.display = 'none';
+  el('authOverlay').style.display = 'flex';
+  el('loginEmail').value = ''; el('loginPwd').value = '';
+  switchAuthTab('login');
+  closeDropdown();
+}
+
+function toggleDropdown(){ el('userDropdown').classList.toggle('open'); }
+function closeDropdown()  { el('userDropdown').classList.remove('open'); }
+document.addEventListener('click', function(e){
+  var ab = el('avatarBtn');
+  if(ab && !ab.contains(e.target)) closeDropdown();
+});
+
+// ══════════════════════════════════════════
+//  DATA LOADING
+// ══════════════════════════════════════════
+async function loadData(){
+  try{
+    el('dbLoadTxt') && (el('dbLoadTxt').textContent = '加载内容中…');
+    var results = await Promise.all([
+      sGet('works?order=id.desc&limit=300'),
+      sGet('admin_materials?order=created_at.desc&limit=200'),
+      sGet('user_materials?order=created_at.desc&limit=200')
+    ]);
+    ALL_WORKS  = results[0] || [];
+    ADMIN_MATS = results[1] || [];
+    USER_MATS  = results[2] || [];
+
+    // My works: from works table (creator = me)
+    if(currentUser){
+      MY_WORKS = ALL_WORKS.filter(function(w){
+        return w.creator === currentUser.username;
+      });
+      // Also pull pending items from review_queue not yet in works table
+      try{
+        var q = await sGet('review_queue?creator=eq.' + encodeURIComponent(currentUser.username) + '&order=submitted_at.desc');
+        (q || []).forEach(function(item){
+          var inWorks = MY_WORKS.some(function(w){ return String(w.id) === String(item.work_id); });
+          if(!inWorks){
+            MY_WORKS.unshift({
+              id: item.work_id || ('q-' + item.id),
+              title: item.title, src: item.src,
+              status: 'pending', creator: item.creator,
+              mode: 'upload', origin: 'user',
+              createdAt: item.submitted_at, created_at: item.submitted_at,
+              likes: 0, _fromQueue: true
+            });
+          }
+        });
+      } catch(e){ console.warn('queue load:', e.message); }
+    }
+
+    renderExplore();
+    renderMyWorks();
+    renderMaterials();
+  } catch(e){
+    showToast('error', '数据加载失败: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════
+function showPage(name){
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  var pg = el('page-' + name);
+  if(pg) pg.classList.add('active');
+  document.querySelectorAll('.tb-nav-item').forEach(function(n){ n.classList.remove('active'); });
+  var ni = el('nav-' + name);
+  if(ni) ni.classList.add('active');
+  if(name === 'myworks')   renderMyWorks();
+  if(name === 'materials') renderMaterials();
+}
+
+// ══════════════════════════════════════════
+//  EXPLORE
+// ══════════════════════════════════════════
+function setFilter(f, btn){
+  currentFilter = f;
+  document.querySelectorAll('.filter-pill').forEach(function(p){ p.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  renderExplore();
+}
+
+function isWorkVisible(w){
+  // Unpublished / deleted always hidden
+  if(w.status === 'unpublished' || w.status === 'rejected' || w.status === 'pending') return false;
+  if(w.origin === 'admin'){
+    // Private = paid-only
+    if(w.status === 'private'){
+      return currentUser && (currentUser.plan === 'pro' || currentUser.plan === 'premium');
+    }
+    return w.status === 'approved' || w.status === 'published';
+  }
+  if(w.origin === 'user'){
+    return w.status === 'approved';
+  }
+  return false;
+}
+
+function renderExplore(){
+  var grid = el('exploreGrid'); if(!grid) return;
+  var typeF  = el('filterType') ? el('filterType').value : '';
+  var search = (el('searchInput') ? el('searchInput').value : '').trim().toLowerCase();
+
+  var visible = ALL_WORKS.filter(function(w){
+    if(!isWorkVisible(w)) return false;
+    if(typeF && w.type !== typeF) return false;
+    if(search){
+      var hay = ((w.title||'') + ' ' + (w.style||'') + ' ' + (w.creator||'')).toLowerCase();
+      if(!hay.includes(search)) return false;
+    }
+    if(currentFilter === 'admin' && w.origin !== 'admin') return false;
+    if(currentFilter === 'user'  && w.origin !== 'user')  return false;
+    return true;
+  });
+
+  if(currentFilter === 'trend'){
+    visible.sort(function(a,b){ return (b.likes||0) - (a.likes||0); });
+  } else {
+    visible.sort(function(a,b){ return (b.id||0) > (a.id||0) ? 1 : -1; });
+  }
+
+  el('exploreCount') && (el('exploreCount').textContent = visible.length + ' 件作品');
+
+  if(!visible.length){
+    grid.innerHTML = '<div class="empty-state" style="column-span:all"><i class="fa fa-image"></i><h3>暂无内容</h3><p>这里还没有符合条件的作品，去创作一个吧！</p></div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+  visible.forEach(function(w, i){
+    var isPaid = w.status === 'private';
+    var isUser = w.origin === 'user';
+    var imgSrc = w.src || w.thumb || ('https://picsum.photos/seed/' + (w.id || i) + '/400/500');
+    var card = document.createElement('div');
+    card.className = 'explore-card';
+    var h = 160 + (i % 5) * 40;
+    var inner = '<img src="' + imgSrc + '" style="height:' + h + 'px;object-fit:cover"'
+      + ' onerror="this.src=\'https://picsum.photos/seed/' + i + '/400/' + h + '\'">';
+    if(isPaid){
+      inner += '<div class="paid-lock">'
+        + '<i class="fa fa-lock"></i>'
+        + '<span>付费内容</span>'
+        + '<button onclick="event.stopPropagation();showToast(\'info\',\'升级套餐即可查看全部内容\')">升级解锁</button>'
+        + '</div>';
+    }
+    if(isUser){
+      inner += '<span class="card-badge" style="background:rgba(34,197,94,.9);color:#000">用户创作</span>';
+    }
+    if(isPaid){
+      inner += '<span class="card-badge" style="top:8px;right:8px;left:auto;background:rgba(245,158,11,.9);color:#000">'
+        + '<i class="fa fa-lock"></i> 付费</span>';
+    }
+    inner += '<div class="card-overlay">'
+      + '<div class="card-title">' + (w.title || '无标题') + '</div>'
+      + '<div class="card-meta">'
+      + '<span><i class="fa fa-user-o"></i> ' + (w.creator || '—') + '</span>'
+      + '<span><i class="fa fa-heart-o"></i> ' + (w.likes || 0) + '</span>'
+      + '</div></div>';
+    card.innerHTML = inner;
+    card.onclick = function(){ openDetail(w); };
+    grid.appendChild(card);
+  });
+}
+
+// ══════════════════════════════════════════
+//  DETAIL MODAL
+// ══════════════════════════════════════════
+var _detailWork = null;
+function openDetail(w){
+  _detailWork = w;
+  el('detailImg').src    = w.src || w.thumb || '';
+  el('detailTitle').textContent    = w.title || '无标题';
+  el('detailCreator').textContent  = w.creator || '—';
+  el('detailDate').textContent     = w.createdAt || w.created_at || '—';
+  el('detailPrompt').textContent   = w.style || w.mode || '—';
+  el('detailStyle').textContent    = (w.style||'') + (w.mode ? ' · ' + w.mode : '');
+  var sm = {
+    approved:'<span style="background:rgba(34,197,94,.15);color:var(--green);font-size:11px;padding:2px 8px;border-radius:20px;font-weight:700">已通过</span>',
+    published:'<span style="background:rgba(98,75,255,.15);color:#b09fff;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:700">已发布</span>',
+    private:'<span style="background:rgba(236,72,153,.15);color:#f472b6;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:700">付费内容</span>'
+  };
+  el('detailStatusBadge').innerHTML = sm[w.status] || '';
+  el('detailModal').classList.add('open');
+}
+function closeModal(id){ el(id).classList.remove('open'); }
+function downloadDetailImg(){
+  if(!_detailWork || !_detailWork.src) return;
+  var a = document.createElement('a'); a.href = _detailWork.src;
+  a.download = 'promptchan_' + Date.now() + '.jpg'; a.target = '_blank'; a.click();
+}
+
+// ══════════════════════════════════════════
+//  MY WORKS
+// ══════════════════════════════════════════
+function setWorksFilter(f, btn){
+  worksFilter = f;
+  document.querySelectorAll('.wft-btn').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  renderMyWorks();
+}
+
+function renderMyWorks(){
+  var grid = el('myWorksGrid'); if(!grid) return;
+  if(!currentUser){
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-lock"></i><h3>请先登录</h3></div>';
+    return;
+  }
+
+  // Merge my works from ALL_WORKS and MY_WORKS (may have pending from queue)
+  var seen = {};
+  var merged = [];
+  function add(w){ if(!seen[w.id]){ seen[w.id]=1; merged.push(w); } }
+  MY_WORKS.forEach(add);
+  ALL_WORKS.filter(function(w){ return w.creator===currentUser.username; }).forEach(add);
+
+  var filtered = worksFilter === 'all' ? merged
+    : merged.filter(function(w){ return w.status === worksFilter; });
+
+  el('myWorksCount').textContent = '共 ' + merged.length + ' 件作品'
+    + (filtered.length !== merged.length ? ' · 当前筛选 ' + filtered.length + ' 件' : '');
+
+  if(!filtered.length){
+    var msg = worksFilter === 'all'
+      ? '<p>去<span style="color:#b09fff;cursor:pointer" onclick="showPage(\'create\')">创作页面</span>生成你的第一件作品吧！</p>'
+      : '<p>没有符合条件的作品</p>';
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-th-large"></i><h3>暂无作品</h3>' + msg + '</div>';
+    return;
+  }
+
+  grid.innerHTML = '';
+  var sLabel = {pending:'待审核',approved:'已通过',rejected:'已拒绝',published:'已发布',unpublished:'已下架',private:'私密'};
+  var sCls   = {pending:'s-pending',approved:'s-approved',rejected:'s-rejected',published:'s-published',unpublished:'s-rejected',private:'s-pending'};
+
+  filtered.forEach(function(w, i){
+    var card = document.createElement('div');
+    card.className = 'work-card';
+    var imgSrc = w.src || w.thumb || ('https://picsum.photos/seed/' + (w.id||i) + '/400/500');
+    card.innerHTML =
+      '<div class="work-img-wrap">'
+      + '<img src="' + imgSrc + '" onerror="this.src=\'https://picsum.photos/seed/' + i + '/400/500\'">'
+      + '<span class="work-status-badge ' + (sCls[w.status]||'s-pending') + '">' + (sLabel[w.status]||w.status||'—') + '</span>'
+      + '</div>'
+      + '<div class="work-info">'
+      + '<div class="work-title">' + (w.title||'无标题') + '</div>'
+      + '<div class="work-meta"><i class="fa fa-clock-o"></i> ' + (w.createdAt||w.created_at||'—') + ' &nbsp;<i class="fa fa-heart-o"></i> ' + (w.likes||0) + '</div>'
+      + '</div>';
+    if(w.status !== 'pending'){
+      card.onclick = function(){ openDetail(w); };
+    } else {
+      card.style.opacity = '.8';
+      card.title = '等待管理员审核';
+    }
+    grid.appendChild(card);
+  });
+}
+
+// ══════════════════════════════════════════
+//  MATERIALS
+// ══════════════════════════════════════════
+function setMatSrc(src){
+  matSrc = src;
+  el('matTab-admin').classList.toggle('active', src === 'admin');
+  el('matTab-user').classList.toggle('active',  src === 'user');
+  renderMaterials();
+}
+
+function renderMaterials(){
+  var grid = el('matGrid'); if(!grid) return;
+  var data = matSrc === 'admin' ? ADMIN_MATS : USER_MATS;
+
+  if(!data.length){
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-database"></i><h3>暂无素材</h3><p>' + (matSrc==='admin'?'管理员尚未添加素材':'还没有用户素材') + '</p></div>';
+    return;
+  }
+  grid.innerHTML = '';
+  data.forEach(function(m, i){
+    var card = document.createElement('div');
+    card.className = 'mat-card';
+    var imgSrc = m.src || m.thumb || ('https://picsum.photos/seed/mat' + i + '/300/375');
+    card.innerHTML =
+      '<div class="mat-img-wrap">'
+      + '<img src="' + imgSrc + '" onerror="this.src=\'https://picsum.photos/seed/m' + i + '/300/375\'">'
+      + (m.recommended ? '<span class="mat-badge" style="background:rgba(98,75,255,.85);color:#fff">推荐</span>' : '')
+      + (m.starred ? '<span class="mat-badge" style="top:' + (m.recommended?28:6) + 'px;left:6px;background:rgba(245,158,11,.85);color:#000">★ 精选</span>' : '')
+      + '</div>'
+      + '<div class="mat-info"><div class="mat-title">' + (m.title||'无标题') + '</div>'
+      + '<div class="mat-meta"><i class="fa fa-user-o"></i> ' + (m.creator||'—') + '</div></div>';
+    card.onclick = function(){
+      openDetail({ src:m.src, title:m.title, creator:m.creator,
+        createdAt:m.created_at, status:'approved', style:m.mode, mode:m.mode, likes:m.likes||0 });
+    };
+    grid.appendChild(card);
+  });
+}
+
+// ══════════════════════════════════════════
+//  CREATE PAGE
+// ══════════════════════════════════════════
+function setMode(mode){
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(function(b){ b.classList.remove('active'); });
+  var mb = el('modeBtn-' + mode); if(mb) mb.classList.add('active');
+  ['txt2img','img2img','faceswap','upload'].forEach(function(m){
+    var p = el('panel-' + m); if(p) p.style.display = m === mode ? '' : 'none';
+  });
+  var labels = {txt2img:'开始生成',img2img:'开始生成',faceswap:'开始换脸',upload:'上传作品'};
+  var icons  = {txt2img:'fa-magic',img2img:'fa-clone',faceswap:'fa-user-circle',upload:'fa-cloud-upload'};
+  el('genLabel').textContent = labels[mode] || '开始生成';
+  el('genIcon').className = 'fa ' + (icons[mode] || 'fa-magic');
+  resetResult();
+}
+
+function addTag(elmt){
+  var p = el('promptInput');
+  var tag = elmt.textContent.trim();
+  if(!p.value.includes(tag)) p.value = (p.value ? p.value.trim() + ', ' : '') + tag;
+  elmt.style.borderColor = '#624BFF'; elmt.style.color = '#a090ff';
+}
+function clearPrompt(){ el('promptInput').value = ''; }
+
+var _ENHANCEMENTS = [
+  ', ultra-detailed, 8k resolution, cinematic lighting',
+  ', masterpiece, best quality, extremely detailed',
+  ', professional photography, bokeh, golden hour'
+];
+function magicEnhance(){
+  var p = el('promptInput');
+  if(!p.value) p.value = 'beautiful anime girl, fantasy setting';
+  if(!_ENHANCEMENTS.some(function(e){ return p.value.includes(e.slice(0,15)); }))
+    p.value += _ENHANCEMENTS[Math.floor(Math.random() * _ENHANCEMENTS.length)];
+}
+
+function previewUpload(previewId, input){
+  var file = input && input.files && input.files[0]; if(!file) return;
+  var pv = el(previewId); if(!pv) return;
+  var reader = new FileReader();
+  reader.onload = function(e){ pv.src = e.target.result; pv.style.display = 'block'; };
+  reader.readAsDataURL(file);
+}
+
+function resetResult(){
+  el('resultPlaceholder').style.display = 'flex';
+  el('genProgressWrap').style.display   = 'none';
+  el('resultImg').style.display         = 'none';
+  el('resultActions').style.display     = 'none';
+  el('submitNotice').style.display      = 'none';
+  _lastResult  = null;
+  genCancelled = false;
+  clearInterval(_progInterval);
+  if(_pollTimer) clearTimeout(_pollTimer);
+}
+
+function cancelGenerate(){
+  genCancelled = true;
+  if(_pollTimer) clearTimeout(_pollTimer);
+  clearInterval(_progInterval);
+  resetResult();
+  el('genBtn').disabled = false;
+  showToast('info', '已取消生成');
+}
+
+// ImgBB upload
+var _uploadCache = {};
+async function uploadToImgBB(file){
+  var ck = file.name + ':' + file.size + ':' + (file.lastModified||0);
+  if(_uploadCache[ck]) return _uploadCache[ck];
+  var b64 = await new Promise(function(res, rej){
+    var fr = new FileReader();
+    fr.onload  = function(e){ res(e.target.result.split(',')[1]); };
+    fr.onerror = rej;
+    fr.readAsDataURL(file);
+  });
+  var fd = new FormData(); fd.append('image', b64);
+  var r = await fetch('https://api.imgbb.com/1/upload?key=' + IMGBB_KEY, { method:'POST', body:fd });
+  if(!r.ok) throw new Error('图片上传失败 ' + r.status);
+  var d = await r.json();
+  if(!d.success || !d.data || !d.data.url) throw new Error('ImgBB 未返回 URL');
+  _uploadCache[ck] = d.data.url;
+  return d.data.url;
+}
+
+// API wrapper
+async function apiFetch(path, opts){
+  opts = opts || {};
+  var headers = Object.assign({'X-Api-Key': API_KEY}, opts.headers || {});
+  return fetch((WORKER_URL || 'https://frw-dreamaiai-api2.aiaiartist.com') + path,
+    Object.assign({}, opts, { headers: headers }));
+}
+
+async function submitTask(tplId, params){
+  var body = JSON.stringify({
+    templateId: tplId,
+    clientUserId: 'promptchan-user-' + (currentUser ? currentUser.id : 'anon'),
+    parameters: params
+  });
+  var r = await apiFetch('/api/frwapi/v1/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: body });
+  var text = await r.text();
+  if(!r.ok){
+    var msg = 'HTTP ' + r.status + ': ' + text.slice(0,200);
+    try{ var j=JSON.parse(text); msg=j.message||(j.error&&j.error.message)||msg; }catch(e){}
+    throw new Error(msg);
+  }
+  var data = JSON.parse(text);
+  if(!data.success) throw new Error((data.error&&data.error.message)||data.message||'提交失败');
+  return data.data.taskId;
+}
+
+async function pollTask(taskId){
+  var r = await apiFetch('/api/frwapi/v1/tasks/' + taskId);
+  if(!r.ok) throw new Error('查询失败 ' + r.status);
+  var d = await r.json();
+  if(!d.success) throw new Error('查询失败');
+  return d.data;
+}
+
+function startPolling(taskId){
+  return new Promise(function(resolve, reject){
+    var retries = 0;
+    function tick(){
+      if(genCancelled){ reject(new Error('cancelled')); return; }
+      pollTask(taskId).then(function(d){
+        if(d.status === 'completed') resolve(d);
+        else if(d.status === 'failed') reject(new Error(d.errorMessage || '任务失败'));
+        else { retries = 0; _pollTimer = setTimeout(tick, 4000); }
+      }).catch(function(){
+        retries++;
+        if(retries > 8){ reject(new Error('轮询超时')); return; }
+        _pollTimer = setTimeout(tick, 6000);
+      });
+    }
+    tick();
+  });
+}
+
+var IMG_STEPS = [
+  ['正在连接 AI 引擎…','初始化生成管线'],
+  ['提示词解析中…','语义理解与风格匹配'],
+  ['扩散采样中…','Latent diffusion 迭代渲染'],
+  ['细节优化中…','高频纹理 & 光影校正'],
+  ['图像后处理…','超分辨率增强']
+];
+var _progStart = 0;
+
+function startProgressAnim(){
+  var bar = el('genProgressBar'), pctEl = el('genPct'), stepIdx = 0, pct = 0;
+  _progStart = Date.now();
+  if(bar) bar.style.width = '0%';
+  if(pctEl) pctEl.textContent = '0%';
+  el('genStepLabel').textContent = IMG_STEPS[0][0];
+  el('genStepSub').textContent   = IMG_STEPS[0][1];
+  _progInterval = setInterval(function(){
+    if(genCancelled){ clearInterval(_progInterval); return; }
+    var elapsed = (Date.now() - _progStart) / 1000;
+    var cap = 88, speed = 35;
+    var target = Math.min(cap * (1 - Math.exp(-elapsed / speed)), cap);
+    pct = Math.max(pct, target);
+    if(bar) bar.style.width = pct.toFixed(1) + '%';
+    if(pctEl) pctEl.textContent = Math.round(pct) + '%';
+    var si = Math.min(Math.floor(pct / (cap / IMG_STEPS.length)), IMG_STEPS.length - 1);
+    if(si !== stepIdx){
+      stepIdx = si;
+      el('genStepLabel').textContent = IMG_STEPS[si][0];
+      el('genStepSub').textContent   = IMG_STEPS[si][1];
+    }
+  }, 600);
+}
+
+function finishProgressAnim(){
+  clearInterval(_progInterval);
+  var bar = el('genProgressBar'), pctEl = el('genPct');
+  if(bar) bar.style.width = '100%';
+  if(pctEl) pctEl.textContent = '100%';
+  el('genStepLabel').textContent = '生成完成！';
+  el('genStepSub').textContent   = '';
+}
+
+function getActiveTitle(){
+  var ids = ['workTitle','workTitle2','workTitle3','workTitleUp'];
+  for(var i=0;i<ids.length;i++){
+    var v = el(ids[i]) && el(ids[i]).value.trim();
+    if(v) return v;
+  }
+  return '我的作品 ' + new Date().toLocaleTimeString();
+}
+
+async function startGenerate(){
+  if(!currentUser){ showToast('error','请先登录'); return; }
+  if((currentUser.credits||0) <= 0 && currentUser.plan === 'free' && currentMode !== 'upload'){
+    showToast('error','积分不足！请升级套餐或明日再试'); return;
+  }
+  genCancelled = false;
+  el('genBtn').disabled = true;
+  el('resultPlaceholder').style.display = 'none';
+  el('genProgressWrap').style.display   = 'block';
+  el('resultImg').style.display         = 'none';
+  el('resultActions').style.display     = 'none';
+  el('submitNotice').style.display      = 'none';
+  startProgressAnim();
+
+  try{
+    var resultUrl = null;
+    var mode = currentMode;
+
+    if(mode === 'upload'){
+      var upFile = el('up-file') && el('up-file').files && el('up-file').files[0];
+      if(!upFile){ showToast('error','请选择要上传的文件'); resetResult(); el('genBtn').disabled=false; return; }
+      el('genStepLabel').textContent = '上传文件中…';
+      resultUrl = await uploadToImgBB(upFile);
+
+    } else if(mode === 'txt2img'){
+      var prompt = el('promptInput').value.trim();
+      if(!prompt){ showToast('error','请输入提示词'); resetResult(); el('genBtn').disabled=false; return; }
+      var style  = el('styleSelect').value;
+      var params = {
+        prompt: prompt + (style ? ', ' + style : ''),
+        negative_prompt: (el('negPrompt').value || '').trim() || 'ugly, deformed, blurry, low quality',
+        num_images: 1
+      };
+      var taskId = await submitTask(TPLS.txt2img, params);
+      var result = await startPolling(taskId);
+      resultUrl = result.outputUrl || (result.outputs&&result.outputs[0]&&result.outputs[0].url) || (result.images&&result.images[0]);
+
+    } else if(mode === 'img2img'){
+      var i2iFile = el('i2i-file') && el('i2i-file').files && el('i2i-file').files[0];
+      var p2 = el('promptInput2').value.trim();
+      if(!i2iFile){ showToast('error','请上传参考图'); resetResult(); el('genBtn').disabled=false; return; }
+      if(!p2){ showToast('error','请输入提示词'); resetResult(); el('genBtn').disabled=false; return; }
+      el('genStepLabel').textContent = '上传参考图中…';
+      var i2iUrl = await uploadToImgBB(i2iFile);
+      var taskId2 = await submitTask(TPLS.img2img, { prompt: p2, image_url: i2iUrl });
+      var result2 = await startPolling(taskId2);
+      resultUrl = result2.outputUrl || (result2.outputs&&result2.outputs[0]&&result2.outputs[0].url) || (result2.images&&result2.images[0]);
+
+    } else if(mode === 'faceswap'){
+      var tFile = el('fs-target-file') && el('fs-target-file').files && el('fs-target-file').files[0];
+      var sFile = el('fs-source-file') && el('fs-source-file').files && el('fs-source-file').files[0];
+      if(!tFile||!sFile){ showToast('error','请上传目标脸和底图'); resetResult(); el('genBtn').disabled=false; return; }
+      el('genStepLabel').textContent = '上传图片中…';
+      var tUrl = await uploadToImgBB(tFile);
+      var sUrl = await uploadToImgBB(sFile);
+      var taskId3 = await submitTask(TPLS.faceswap, { target_image_url: tUrl, source_image_url: sUrl });
+      var result3 = await startPolling(taskId3);
+      resultUrl = result3.outputUrl || (result3.outputs&&result3.outputs[0]&&result3.outputs[0].url) || (result3.images&&result3.images[0]);
+    }
+
+    if(!resultUrl) throw new Error('未获取到生成结果，请重试');
+
+    finishProgressAnim();
+    _lastResult = { url: resultUrl, mode: mode };
+
+    setTimeout(function(){
+      el('genProgressWrap').style.display = 'none';
+      var img = el('resultImg');
+      img.src = resultUrl; img.style.display = 'block';
+      el('resultActions').style.display = 'flex';
+      // Deduct credit (free plan, non-upload)
+      if(currentUser.plan === 'free' && mode !== 'upload'){
+        var newCredits = Math.max(0, (currentUser.credits||0) - 1);
+        currentUser.credits = newCredits;
+        el('creditsDisplay').textContent = newCredits;
+        el('planCredits').textContent    = newCredits;
+        sPatch('platform_users', {id: currentUser.id}, {credits: newCredits}).catch(function(){});
+      }
+    }, 500);
+
+  } catch(e){
+    if(e.message === 'cancelled'){ el('genBtn').disabled=false; return; }
+    clearInterval(_progInterval);
+    el('genProgressWrap').style.display = 'none';
+    el('resultPlaceholder').style.display = 'flex';
+    showToast('error', '生成失败: ' + e.message);
+  }
+  el('genBtn').disabled = false;
+}
+
+function downloadResult(){
+  if(!_lastResult) return;
+  var a = document.createElement('a'); a.href = _lastResult.url;
+  a.download = 'promptchan_' + Date.now() + '.jpg'; a.target = '_blank'; a.click();
+}
+
+async function submitToReview(){
+  if(!currentUser){ showToast('error','请先登录'); return; }
+  if(!_lastResult){ showToast('error','请先生成作品'); return; }
+  var title = getActiveTitle();
+  var now = new Date().toISOString().slice(0,10);
+  try{
+    // 1. Insert into works table with status:pending
+    var workData = {
+      title: title, type: 'image', mode: _lastResult.mode,
+      src: _lastResult.url, thumb: _lastResult.url,
+      style: el('styleSelect') ? el('styleSelect').value : '',
+      status: 'pending', creator: currentUser.username,
+      origin: 'user', likes: 0, created_at: now
+    };
+    var savedArr = await sPost('works', workData);
+    var saved = Array.isArray(savedArr) ? savedArr[0] : savedArr;
+    var workId = saved ? saved.id : null;
+
+    // 2. Insert into review_queue for admin to review
+    await sPost('review_queue', {
+      title: title, src: _lastResult.url,
+      creator: currentUser.username,
+      reason: '用户创作', reports: 0,
+      priority: 'mid', submitted_at: now,
+      work_id: workId
+    });
+
+    // 3. Update local state
+    var localWork = Object.assign({}, workData, { id: workId, createdAt: now });
+    MY_WORKS.unshift(localWork);
+
+    el('resultActions').style.display = 'none';
+    el('submitNotice').style.display  = 'flex';
+    showToast('success', '作品已提交审核！✓');
+    renderMyWorks();
+  } catch(e){
+    showToast('error', '提交失败: ' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════
+//  PROFILE
+// ══════════════════════════════════════════
+async function saveProfile(){
+  if(!currentUser) return;
+  var newName = el('editUsername').value.trim();
+  if(!newName){ showToast('error','用户名不能为空'); return; }
+  try{
+    await sPatch('platform_users', {id: currentUser.id}, {username: newName});
+    currentUser.username = newName;
+    setSession(currentUser);
+    el('ddUsername').textContent = newName;
+    el('profileName').textContent = newName;
+    var init = newName.slice(0,1).toUpperCase();
+    el('avatarInitial').textContent = init;
+    el('profileAvatar').textContent = init;
+    showToast('success','资料已保存 ✓');
+  } catch(e){ showToast('error','保存失败: ' + e.message); }
+}
+
+async function changePassword(){
+  if(!currentUser) return;
+  var np = el('newPwd').value, cp = el('confirmPwd').value;
+  if(!np){ showToast('error','请输入新密码'); return; }
+  if(np.length < 6){ showToast('error','密码至少6位'); return; }
+  if(np !== cp){ showToast('error','两次密码不一致'); return; }
+  try{
+    await sPatch('platform_users', {id: currentUser.id}, {password: np});
+    currentUser.password = np; setSession(currentUser);
+    el('newPwd').value = ''; el('confirmPwd').value = '';
+    showToast('success','密码已修改 ✓');
+  } catch(e){ showToast('error','修改失败: ' + e.message); }
+}
+
+// ══════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════
+(function init(){
+  try{ var w = localStorage.getItem('cf_worker_url'); if(w && w.startsWith('http')) WORKER_URL = w; }catch(e){}
+
+  el('dbLoadingOverlay').style.display = 'flex';
+  var timeout = setTimeout(function(){
+    el('dbLoadingOverlay').style.display = 'none';
+    var sess = getSession();
+    if(sess){ onLoginSuccess(sess); }
+    else { el('authOverlay').style.display = 'flex'; }
+    showToast('error','数据库连接超时，部分功能可能受限');
+  }, 12000);
+
+  sGet('platform_users?limit=1').then(function(rows){
+    clearTimeout(timeout);
+    el('dbLoadingOverlay').style.display = 'none';
+    var sess = getSession();
+    if(sess){ onLoginSuccess(sess); }
+    else { el('authOverlay').style.display = 'flex'; }
+  }).catch(function(e){
+    clearTimeout(timeout);
+    el('dbLoadingOverlay').style.display = 'none';
+    console.warn('DB connect failed:', e.message);
+    var sess = getSession();
+    if(sess){ onLoginSuccess(sess); }
+    else { el('authOverlay').style.display = 'flex'; }
+  });
+})();
+</script>
+</body>
+</html>
