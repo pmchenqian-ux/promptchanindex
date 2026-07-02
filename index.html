@@ -743,7 +743,7 @@ async function doLogin(){
       return;
     }
     if(u.status === 'banned'){ authErr('账号已被封禁，请联系管理员'); return; }
-    sPatch('platform_users', {id:u.id}, {last_login: new Date().toISOString().slice(0,10)}).catch(function(){});
+    // last_login patch omitted (column may not exist)
     setSession(u);
     onLoginSuccess(u);
   } catch(e){
@@ -773,9 +773,8 @@ async function doRegister(){
     if(ex && ex.length){ authErr('该邮箱已注册'); return; }
     var nc = await sGet('platform_users?username=eq.' + encodeURIComponent(name) + '&limit=1');
     if(nc && nc.length){ authErr('用户名已被占用'); return; }
-    var now = new Date().toISOString().slice(0,10);
     var payload = { username:name, email:email, password:pwd, plan:'free',
-      credits:10, status:'active', created_at:now, last_login:now };
+      credits:10, status:'active' };
     var res = await sPost('platform_users', payload);
     var saved = Array.isArray(res) ? res[0] : res;
     authOk('注册成功！正在登录…');
