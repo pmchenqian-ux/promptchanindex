@@ -380,15 +380,15 @@ select option{background:var(--card2)}
     <div id="authErr" class="auth-err"></div>
     <div id="authSuccess" class="auth-success"></div>
     <div id="loginForm">
-      <div class="auth-field"><label>邮箱</label><input type="email" id="loginEmail" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doLogin()"></div>
-      <div class="auth-field"><label>密码</label><input type="password" id="loginPwd" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="auth-field"><label>用户名</label><input type="text" id="loginUsername" placeholder="输入用户名" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="username"></div>
+      <div class="auth-field"><label>密码</label><input type="password" id="loginPwd" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"></div>
       <button class="auth-btn" onclick="doLogin()"><i class="fa fa-sign-in"></i> 登录</button>
       <div class="auth-divider">还没有账号？<span style="color:var(--purple);cursor:pointer" onclick="switchAuthTab('register')">立即注册</span></div>
     </div>
     <div id="registerForm" style="display:none">
-      <div class="auth-field"><label>用户名</label><input type="text" id="regName" placeholder="coolcreator" onkeydown="if(event.key==='Enter')doRegister()"></div>
-      <div class="auth-field"><label>邮箱</label><input type="email" id="regEmail" placeholder="your@email.com" onkeydown="if(event.key==='Enter')doRegister()"></div>
-      <div class="auth-field"><label>密码</label><input type="password" id="regPwd" placeholder="至少6位" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <div class="auth-field"><label>用户名</label><input type="text" id="regName" placeholder="coolcreator" onkeydown="if(event.key==='Enter')doRegister()" autocomplete="username"></div>
+      <div class="auth-field"><label>邮箱 <span style="color:var(--muted);font-weight:400">（选填）</span></label><input type="email" id="regEmail" placeholder="your@email.com（可留空）" onkeydown="if(event.key==='Enter')doRegister()"></div>
+      <div class="auth-field"><label>密码</label><input type="password" id="regPwd" placeholder="至少6位" onkeydown="if(event.key==='Enter')doRegister()" autocomplete="new-password"></div>
       <button class="auth-btn" onclick="doRegister()"><i class="fa fa-user-plus"></i> 注册账号</button>
       <div class="auth-divider">已有账号？<span style="color:var(--purple);cursor:pointer" onclick="switchAuthTab('login')">去登录</span></div>
     </div>
@@ -1106,73 +1106,58 @@ function authErr(msg){ var e=el('authErr'); e.textContent=msg; e.style.display='
 function authOk(msg){ var s=el('authSuccess'); s.textContent=msg; s.style.display='block'; el('authErr').style.display='none'; }
 
 async function doLogin(){
-  var email = el('loginEmail').value.trim().toLowerCase();
-  var pwd   = el('loginPwd').value;
-  if(!email || !pwd){ authErr('请填写邮箱和密码'); return; }
+  var username = (el('loginUsername').value||'').trim();
+  var pwd      = (el('loginPwd').value||'');
+  if(!username || !pwd){ authErr('请填写用户名和密码'); return; }
   try{
-    // 先查邮箱是否存在
-    var byEmail = await sGet('platform_users?select=*&email=eq.' + encodeURIComponent(email) + '&limit=1');
-    if(!byEmail || !byEmail.length){
-      authErr('该邮箱未注册，请先注册账号');
-      return;
-    }
-    var u = byEmail[0];
-    // 检查密码字段是否存在
-    if(!('password' in u)){
-      authErr('数据库缺少 password 字段，请先在 Supabase 执行数据库迁移 SQL');
-      return;
-    }
-    // 验证密码
-    if(String(u.password) !== String(pwd)){
-      authErr('密码错误，请重新输入');
-      return;
-    }
+    var rows = await sGet('platform_users?select=*&username=eq.' + encodeURIComponent(username) + '&limit=1');
+    if(!rows || !rows.length){ authErr('用户名不存在，请先注册账号'); return; }
+    var u = rows[0];
+    if(!('password' in u)){ authErr('数据库缺少 password 字段，请先执行数据库迁移 SQL'); return; }
+    if(String(u.password) !== String(pwd)){ authErr('密码错误，请重新输入'); return; }
     if(u.status === 'banned'){ authErr('账号已被封禁，请联系管理员'); return; }
-    // last_login patch omitted (column may not exist)
     setSession(u);
     onLoginSuccess(u);
   } catch(e){
-    // 解析 Supabase 错误
     var msg = e.message || '';
-    if(msg.indexOf('password') !== -1 && msg.indexOf('does not exist') !== -1){
-      authErr('数据库缺少 password 字段，请在 Supabase SQL Editor 执行迁移脚本');
-    } else if(msg.indexOf('relation') !== -1 && msg.indexOf('does not exist') !== -1){
-      authErr('数据表不存在，请先执行数据库迁移脚本');
-    } else if(msg.indexOf('JWT') !== -1 || msg.indexOf('apikey') !== -1){
-      authErr('Supabase API Key 错误，请检查配置');
-    } else {
-      authErr('登录失败：' + msg);
-    }
+    if(msg.indexOf('does not exist') !== -1) authErr('数据表不存在，请先执行数据库迁移脚本');
+    else if(msg.indexOf('JWT') !== -1 || msg.indexOf('apikey') !== -1) authErr('API Key 错误，请检查配置');
+    else authErr('登录失败：' + msg);
   }
 }
 
 async function doRegister(){
-  var name  = el('regName').value.trim();
-  var email = el('regEmail').value.trim().toLowerCase();
-  var pwd   = el('regPwd').value;
-  if(!name || !email || !pwd){ authErr('请填写所有字段'); return; }
-  if(pwd.length < 6){ authErr('密码至少需要6位'); return; }
-  if(!/\S+@\S+\.\S+/.test(email)){ authErr('请输入有效邮箱'); return; }
+  var name  = (el('regName').value||'').trim();
+  var email = (el('regEmail').value||'').trim().toLowerCase();
+  var pwd   = (el('regPwd').value||'');
+  if(!name){ authErr('请填写用户名'); return; }
+  if(!pwd || pwd.length < 6){ authErr('密码至少需要6位'); return; }
+  if(email && !/\S+@\S+\.\S+/.test(email)){ authErr('邮箱格式不正确'); return; }
+  // 如果没填邮箱，用用户名生成一个占位邮箱
+  var finalEmail = email || (name.toLowerCase().replace(/[^a-z0-9]/g,'_') + '@user.promptchan.local');
   try{
-    var ex = await sGet('platform_users?email=eq.' + encodeURIComponent(email) + '&limit=1');
-    if(ex && ex.length){ authErr('该邮箱已注册'); return; }
     var nc = await sGet('platform_users?username=eq.' + encodeURIComponent(name) + '&limit=1');
-    if(nc && nc.length){ authErr('用户名已被占用'); return; }
-    var payload = { username:name, email:email, password:pwd, plan:'free',
-      credits:10, status:'active' };
+    if(nc && nc.length){ authErr('用户名已被占用，请换一个'); return; }
+    if(email){
+      var ex = await sGet('platform_users?email=eq.' + encodeURIComponent(finalEmail) + '&limit=1');
+      if(ex && ex.length){ authErr('该邮箱已注册'); return; }
+    }
+    var payload = { username:name, email:finalEmail, password:pwd, plan:'free', credits:10, status:'active' };
     var res = await sPost('platform_users', payload);
+    if(!res){ authErr('注册失败，请重试'); return; }
     var saved = Array.isArray(res) ? res[0] : res;
-    authOk('注册成功！正在登录…');
-    setTimeout(function(){ setSession(saved); onLoginSuccess(saved); }, 800);
+    if(!saved || !saved.id){
+      // fallback: 注册成功后直接登录查询
+      var rows2 = await sGet('platform_users?username=eq.' + encodeURIComponent(name) + '&limit=1');
+      saved = rows2 && rows2[0];
+    }
+    authOk('注册成功！正在进入…');
+    setTimeout(function(){ if(saved){ setSession(saved); onLoginSuccess(saved); } }, 800);
   } catch(e){
     var msg = e.message || '';
-    if(msg.indexOf('duplicate') !== -1 || msg.indexOf('unique') !== -1){
-      authErr('该邮箱或用户名已被注册');
-    } else if(msg.indexOf('relation') !== -1 && msg.indexOf('does not exist') !== -1){
-      authErr('数据表不存在，请先执行数据库迁移脚本');
-    } else {
-      authErr('注册失败：' + msg);
-    }
+    if(msg.indexOf('duplicate') !== -1 || msg.indexOf('unique') !== -1) authErr('用户名或邮箱已被注册');
+    else if(msg.indexOf('does not exist') !== -1) authErr('数据表不存在，请先执行数据库迁移脚本');
+    else authErr('注册失败：' + msg);
   }
 }
 
@@ -1996,15 +1981,17 @@ function renderChatCharList(){
     return;
   }
   list.innerHTML = chatChars.map(function(c){
-    return '<div class="chat-char-item'+(activeChatChar===c.id?' active':'')+'" onclick="selectChar(''+c.id+'')">'
+    var sid = String(c.id).replace(/'/g,"\'");
+    return '<div class="chat-char-item'+(activeChatChar===c.id?' active':'')+'" onclick="selectChar(\'' + sid + '\')">'
       +'<div class="chat-char-avatar-placeholder" style="background:linear-gradient(135deg,'+c.color+','+c.color+'aa)">'+c.name[0]+'</div>'
       +'<div class="chat-char-info"><div class="chat-char-name">'+escHtml(c.name)+'</div>'
       +'<div class="chat-char-preview">'+(c.lastMsg?escHtml(c.lastMsg):'开始对话…')+'</div></div>'
       +(c.time?'<div class="chat-char-time">'+escHtml(c.time)+'</div>':'')
-      +'<button class="chat-char-close" onclick="event.stopPropagation();removeChar(''+c.id+'')">×</button>'
+      +'<button class="chat-char-close" onclick="event.stopPropagation();removeChar(\'' + sid + '\')">×</button>'
       +'</div>';
   }).join('');
 }
+
 
 async function selectChar(id){
   activeChatChar = id;
