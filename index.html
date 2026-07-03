@@ -2015,9 +2015,7 @@ function renderChatMessages(id, char, hist){
   hist = hist || chatHistory[id] || [];
   if(!hist.length){
     // Greeting
-    var greeting = '*' + char.name + ' 向你微微一笑*
-
-你好，我是 ' + char.name + '。' + (char.desc||'很高兴认识你。');
+    var greeting = '*' + char.name + ' 向你微微一笑*\n\n你好，我是 ' + char.name + '。' + (char.description||'很高兴认识你。');
     appendChatBubble('ai', greeting, char);
   } else {
     hist.forEach(function(m){
@@ -2041,8 +2039,7 @@ function appendChatBubble(role, text, char){
     : '<div class="chat-msg-avatar-ph" style="background:var(--card2);color:var(--text)">'+userInitial+'</div>';
   var actionsHtml = isAI ? '<div class="chat-msg-actions"><button class="chat-msg-action"><i class="fa fa-volume-up"></i></button><button class="chat-msg-action"><i class="fa fa-refresh"></i></button></div>' : '';
   div.innerHTML = avatarHtml
-    +'<div><div class="chat-msg-bubble">'+text.replace(/
-/g,'<br>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')+'</div>'+actionsHtml+'</div>';
+    +'<div><div class="chat-msg-bubble">'+text.replace(/\n/g,'<br>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')+'</div>'+actionsHtml+'</div>';
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
 }
@@ -2088,16 +2085,7 @@ async function sendChat(){
   try{
     var isStory = chatMode==='story';
     var scenario = (el('chatScenario')&&el('chatScenario').value.trim()) || '';
-    var sysPrompt = '你正在扮演一个名叫「'+char.name+'」的角色。角色描述：'+(char.description||'一个有趣的AI伴侣。')
-      +(scenario?'
-当前场景：'+scenario:'')
-      +'
-
-'+(isStory
-        ? '请用沉浸式角色扮演的方式回复，可以用*斜体*描述动作和场景，用普通文字表达对话。保持角色一致性，回复简洁生动（50-120字）。'
-        : '请用自然轻松的对话方式回复，就像真实的朋友聊天一样，简洁有趣（30-80字）。')
-      +'
-请用中文回复。';
+    var sysPrompt = '你正在扮演一个名叫「'+char.name+'」的角色。角色描述：'+(char.description||'一个有趣的AI伴侣。')+(scenario?'\n当前场景：'+scenario:'')+'\n\n'+(isStory?'请用沉浸式角色扮演的方式回复，可以用*斜体*描述动作和场景，用普通文字表达对话。保持角色一致性，回复简洁生动（50-120字）。':'请用自然轻松的对话方式回复，就像真实的朋友聊天一样，简洁有趣（30-80字）。')+'\n请用中文回复。';
 
     var messages = chatHistory[activeChatChar].map(function(m){ return {role:m.role,content:m.content}; });
     var resp = await fetch('https://api.anthropic.com/v1/messages',{
@@ -2130,9 +2118,7 @@ function clearChatMessages(){
   var msgs=el('chatMessages');
   if(msgs){ msgs.innerHTML=''; }
   var char=chatChars.find(function(c){return c.id===activeChatChar;});
-  if(char){ appendChatBubble('ai','*'+char.name+' 微笑着重新开始*
-
-你好！有什么我能为你做的吗？',char); }
+  if(char){ appendChatBubble('ai','*'+char.name+' 微笑着重新开始*\n\n你好！有什么我能为你做的吗？',char); }
 }
 
 function clearAllChats(){
