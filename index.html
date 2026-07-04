@@ -724,13 +724,14 @@ select option{background:var(--card2)}
         <img id="resultImg" style="display:none;max-width:90%;max-height:480px;border-radius:10px;object-fit:contain">
       </div>
       <div id="resultActions" class="result-actions">
-        <button class="btn btn-green" onclick="submitToReview()"><i class="fa fa-paper-plane"></i> 提交审核</button>
+        <button class="btn btn-primary" id="saveWorkBtn" onclick="saveUserWork()"><i class="fa fa-save"></i> 保存到素材库</button>
+        <button class="btn btn-green" id="submitPublicBtn" onclick="submitToPublic()" style="display:none"><i class="fa fa-paper-plane"></i> 申请公开展示</button>
         <button class="btn btn-ghost" onclick="downloadResult()"><i class="fa fa-download"></i> 下载</button>
         <button class="btn btn-ghost" onclick="resetResult()"><i class="fa fa-refresh"></i> 重新生成</button>
       </div>
       <div id="submitNotice" class="pending-notice" style="display:none">
-        <i class="fa fa-clock-o" style="margin-top:1px;flex-shrink:0"></i>
-        <div>作品已提交审核，管理员审核通过后将公开展示。可在<span style="color:#b09fff;cursor:pointer" onclick="showPage('myworks')">「我的作品」</span>查看审核状态。</div>
+        <i class="fa fa-check-circle" style="margin-top:1px;flex-shrink:0;color:var(--green)"></i>
+        <div>作品已保存到素材库！点击<span style="color:#b09fff;cursor:pointer" onclick="showPage('materials');setMatSrc('user')">「我的素材」</span>查看，或点击「申请公开展示」提交审核。</div>
       </div>
     </div>
   </div>
@@ -767,6 +768,7 @@ select option{background:var(--card2)}
   <div class="mat-src-tabs">
     <button class="mat-src-tab active" id="matTab-admin" onclick="setMatSrc('admin')"><i class="fa fa-shield"></i> 官方素材库</button>
     <button class="mat-src-tab" id="matTab-user" onclick="setMatSrc('user')"><i class="fa fa-users"></i> 用户素材库</button>
+    <button class="mat-src-tab" id="matTab-mine" onclick="setMatSrc('mine')"><i class="fa fa-user"></i> 我的素材</button>
   </div>
   <div class="mat-grid" id="matGrid">
     <div class="empty-state" style="grid-column:1/-1"><div class="db-spinner" style="margin:0 auto 12px"></div></div>
@@ -1127,6 +1129,7 @@ var ALL_WORKS     = [];
 var MY_WORKS      = [];
 var ADMIN_MATS    = [];
 var USER_MATS     = [];
+var MY_MATS       = [];  // current user own materials (local cache)
 var currentFilter = 'trend';
 var worksFilter   = 'all';
 var matSrc        = 'admin';
@@ -1569,35 +1572,66 @@ function renderMyWorks(){
 // ══════════════════════════════════════════
 function setMatSrc(src){
   matSrc = src;
-  el('matTab-admin').classList.toggle('active', src === 'admin');
-  el('matTab-user').classList.toggle('active',  src === 'user');
+  ['admin','user','mine'].forEach(function(t){
+    var tb = el('matTab-' + t); if(tb) tb.classList.toggle('active', t === src);
+  });
+  if(src === 'mine' && currentUser) loadMyMats();
+  else renderMaterials();
+}
+
+async function loadMyMats(){
+  if(!currentUser){ renderMaterials(); return; }
+  try{
+    var rows = await sGet('user_materials?creator=eq.' + encodeURIComponent(currentUser.username) + '&order=created_at.desc&limit=200');
+    MY_MATS = rows || [];
+  } catch(e){ console.warn('loadMyMats:', e.message); }
   renderMaterials();
 }
 
 function renderMaterials(){
   var grid = el('matGrid'); if(!grid) return;
-  var data = matSrc === 'admin' ? ADMIN_MATS : USER_MATS;
+  var data;
+  if(matSrc === 'admin'){
+    data = ADMIN_MATS;
+  } else if(matSrc === 'mine'){
+    data = MY_MATS;  // 当前用户自己的素材（本地缓存+DB加载）
+  } else {
+    data = USER_MATS;
+  }
 
+  var emptyMsg = {admin:'管理员尚未添加素材', user:'还没有用户素材', mine:'你还没有生成过内容，快去创作吧！'};
   if(!data.length){
-    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-database"></i><h3>暂无素材</h3><p>' + (matSrc==='admin'?'管理员尚未添加素材':'还没有用户素材') + '</p></div>';
+    var isEmpty = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-' + (matSrc==='mine'?'magic':'database') + '"></i><h3>' + (matSrc==='mine'?'暂无素材':'暂无素材') + '</h3><p>' + (emptyMsg[matSrc]||'暂无') + '</p>' + (matSrc==='mine'?'<button class="btn btn-primary" style="margin-top:12px" onclick="showPage(\'create\')"><i class="fa fa-magic"></i> 去创作</button>':'') + '</div>';
+    grid.innerHTML = isEmpty;
     return;
   }
   grid.innerHTML = '';
   data.forEach(function(m, i){
     var card = document.createElement('div');
     card.className = 'mat-card';
-    var imgSrc = m.src || m.thumb || ('https://picsum.photos/seed/mat' + i + '/300/375');
+    var isVideo = m.media_type === 'video' || m.type === 'video';
+    var imgSrc = m.thumb || m.src || ('https://picsum.photos/seed/mat' + i + '/300/375');
+    var statusBadge = '';
+    if(matSrc === 'mine'){
+      var statusMap = {pending:'待审核',approved:'已公开',rejected:'已拒绝',private:'私密'};
+      var statusColor = {pending:'rgba(245,158,11,.85)',approved:'rgba(34,197,94,.85)',rejected:'rgba(239,68,68,.85)',private:'rgba(98,75,255,.85)'};
+      var st = m.status||'saved';
+      if(st !== 'approved') statusBadge = '<span class="mat-badge" style="background:' + (statusColor[st]||'rgba(100,100,100,.85)') + ';color:#fff">' + (statusMap[st]||st) + '</span>';
+    }
     card.innerHTML =
-      '<div class="mat-img-wrap">'
-      + '<img src="' + imgSrc + '" onerror="this.src=\'https://picsum.photos/seed/m' + i + '/300/375\'">'
+      '<div class="mat-img-wrap" style="position:relative">'
+      + (isVideo ? '<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:1"><i class="fa fa-play-circle" style="font-size:32px;color:rgba(255,255,255,.7)"></i></div>' : '')
+      + '<img src="' + imgSrc + '" style="' + (isVideo?'opacity:.5':'') + '" onerror="this.src=\'https://picsum.photos/seed/m0/300/375\'">'  
       + (m.recommended ? '<span class="mat-badge" style="background:rgba(98,75,255,.85);color:#fff">推荐</span>' : '')
       + (m.starred ? '<span class="mat-badge" style="top:' + (m.recommended?28:6) + 'px;left:6px;background:rgba(245,158,11,.85);color:#000">★ 精选</span>' : '')
+      + statusBadge
       + '</div>'
-      + '<div class="mat-info"><div class="mat-title">' + (m.title||'无标题') + '</div>'
-      + '<div class="mat-meta"><i class="fa fa-user-o"></i> ' + (m.creator||'—') + '</div></div>';
+      + '<div class="mat-info"><div class="mat-title">' + escHtml(m.title||'无标题') + '</div>'
+      + '<div class="mat-meta"><i class="fa fa-user-o"></i> ' + escHtml(m.creator||'—')
+      + (m.mode ? ' &nbsp;·&nbsp; <i class="fa fa-tag"></i> ' + m.mode : '') + '</div></div>';
     card.onclick = function(){
-      openDetail({ src:m.src, title:m.title, creator:m.creator,
-        createdAt:m.created_at, status:'approved', style:m.mode, mode:m.mode, likes:m.likes||0 });
+      openDetail({ src: m.src || m.url, video_src: m.video_src, title:m.title, creator:m.creator,
+        createdAt:m.created_at, status:m.status||'approved', style:m.mode, mode:m.mode, likes:m.likes||0 });
     };
     grid.appendChild(card);
   });
@@ -2034,6 +2068,11 @@ async function startGenerate(){
           el('resultImg').style.display = 'block';
         }
         el('resultActions').style.display = 'flex';
+        // 重置保存按钮状态
+        var sb = el('saveWorkBtn');
+        if(sb){ sb.disabled=false; sb.className='btn btn-primary'; sb.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
+        var pb = el('submitPublicBtn'); if(pb) pb.style.display='none';
+        el('submitNotice').style.display='none';
         // 扣除积分
         if(currentUser.plan === 'free'){
           var newCredits = Math.max(0, (currentUser.credits||0) - 1);
@@ -2063,45 +2102,109 @@ function downloadResult(){
   a.download = 'promptchan_' + Date.now() + '.jpg'; a.target = '_blank'; a.click();
 }
 
-async function submitToReview(){
+// ── 保存到素材库（生成后立即调用）──────────────────────────────
+var _savedWorkId  = null;  // 本次生成对应的 works.id
+var _savedMatId   = null;  // 本次生成对应的 user_materials.id
+
+async function saveUserWork(){
   if(!currentUser){ showToast('error','请先登录'); return; }
   if(!_lastResult){ showToast('error','请先生成作品'); return; }
-  var title = getActiveTitle();
-  var now = new Date().toISOString().slice(0,10);
-  try{
-    // 1. Insert into works table with status:pending
-    var workData = {
-      title: title, type: 'image', mode: _lastResult.mode,
-      src: _lastResult.url, thumb: _lastResult.url,
-      style: el('styleSelect') ? el('styleSelect').value : '',
-      status: 'pending', creator: currentUser.username,
-      origin: 'user', likes: 0, created_at: now
-    };
-    var savedArr = await sPost('works', workData);
-    var saved = Array.isArray(savedArr) ? savedArr[0] : savedArr;
-    var workId = saved ? saved.id : null;
+  var btn = el('saveWorkBtn');
+  if(btn && btn.disabled) return;
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> 保存中…'; }
 
-    // 2. Insert into review_queue for admin to review
+  var isVideo = _lastResult.isVideo;
+  var title   = getActiveTitle();
+  var now     = new Date().toISOString().replace('T',' ').slice(0,19);
+  var matId   = 'usr-' + currentUser.id + '-' + Date.now();
+  var mode    = _lastResult.mode || currentMode;
+
+  try{
+    // 1. 写入 works 表 (status=pending，等待管理员审核后才公开)
+    var workRow = {
+      title:     title,
+      type:      isVideo ? 'video' : 'image',
+      mode:      mode,
+      src:       _lastResult.url,
+      video_src: isVideo ? _lastResult.url : null,
+      thumb:     _lastResult.url,
+      style:     (el('styleSelect') && el('styleSelect').value) || mode,
+      status:    'pending',
+      creator:   currentUser.username,
+      origin:    'user',
+      likes:     0,
+      created_at: now
+    };
+    var savedArr = await sPost('works', workRow);
+    var saved    = Array.isArray(savedArr) ? savedArr[0] : savedArr;
+    _savedWorkId = saved ? saved.id : null;
+    MY_WORKS.unshift(Object.assign({}, workRow, {id: _savedWorkId}));
+
+    // 2. 写入 user_materials 表（用户立即可见，无需审核）
+    var matRow = {
+      id:         matId,
+      work_id:    _savedWorkId,
+      title:      title,
+      src:        _lastResult.url,
+      video_src:  isVideo ? _lastResult.url : null,
+      thumb:      _lastResult.url,
+      mode:       mode,
+      media_type: isVideo ? 'video' : 'image',
+      creator:    currentUser.username,
+      created_at: now,
+      likes:      0,
+      starred:    false,
+      recommended:false,
+      status:     'pending'
+    };
+    await sPost('user_materials', matRow);
+    MY_MATS.unshift(matRow);
+    _savedMatId = matId;
+
+    // 3. 写入 review_queue（管理端可见，等待审核公开）
     await sPost('review_queue', {
-      title: title, src: _lastResult.url,
-      creator: currentUser.username,
-      reason: '用户创作', reports: 0,
-      priority: 'mid', submitted_at: now,
-      work_id: workId
+      title:        title,
+      src:          _lastResult.url,
+      creator:      currentUser.username,
+      reason:       '用户创作 - ' + mode,
+      reports:      0,
+      priority:     'mid',
+      submitted_at: now,
+      work_id:      _savedWorkId
     });
 
-    // 3. Update local state
-    var localWork = Object.assign({}, workData, { id: workId, createdAt: now });
-    MY_WORKS.unshift(localWork);
-
-    el('resultActions').style.display = 'none';
-    el('submitNotice').style.display  = 'flex';
-    showToast('success', '作品已提交审核！✓');
+    // UI 更新
+    if(btn){ btn.className='btn btn-ghost'; btn.innerHTML='<i class="fa fa-check"></i> 已保存'; btn.disabled=false; }
+    var pubBtn = el('submitPublicBtn'); if(pubBtn) pubBtn.style.display='';
+    el('submitNotice').style.display = 'flex';
+    showToast('success', '✅ 已保存到素材库，等待审核公开');
     renderMyWorks();
   } catch(e){
-    showToast('error', '提交失败: ' + e.message);
+    if(btn){ btn.disabled=false; btn.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
+    showToast('error','保存失败: ' + e.message);
+    console.error('[saveUserWork]', e);
   }
 }
+
+// ── 申请公开（保存后才能调用）──────────────────────────────────
+async function submitToPublic(){
+  if(!_savedWorkId){ showToast('error','请先保存作品'); return; }
+  var btn = el('submitPublicBtn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> 申请中…'; }
+  try{
+    // 更新 works 记录 priority 到 high（管理端优先显示）
+    await sPatch('works', {id:_savedWorkId}, {});  // already in review_queue
+    if(btn){ btn.className='btn btn-ghost'; btn.innerHTML='<i class="fa fa-check"></i> 已申请'; btn.disabled=true; }
+    showToast('success','已申请公开展示，审核通过后将出现在探索页');
+  } catch(e){
+    if(btn){ btn.disabled=false; btn.innerHTML='<i class="fa fa-paper-plane"></i> 申请公开展示'; }
+    showToast('error','申请失败: ' + e.message);
+  }
+}
+
+// ── 保留兼容旧入口 ───────────────────────────────────────────
+async function submitToReview(){ saveUserWork(); }
+
 
 // ══════════════════════════════════════════
 //  PROFILE
