@@ -1710,6 +1710,8 @@ var _uploadCache = {};
 async function uploadToImgBB(file){
   var ck = file.name + ':' + file.size + ':' + (file.lastModified||0);
   if(_uploadCache[ck]) return _uploadCache[ck];
+  el('genStepLabel').textContent = '上传图片中…';
+  el('genStepSub') && (el('genStepSub').textContent = '正在上传到图床…');
   var b64 = await new Promise(function(res, rej){
     var fr = new FileReader();
     fr.onload  = function(e){ res(e.target.result.split(',')[1]); };
@@ -1725,7 +1727,7 @@ async function uploadToImgBB(file){
   return d.data.url;
 }
 
-// API wrapper
+// ── API fetch via Worker ──────────────────────────────────────
 async function apiFetch(path, opts){
   opts = opts || {};
   var headers = Object.assign({'X-Api-Key': API_KEY}, opts.headers || {});
@@ -1733,44 +1735,56 @@ async function apiFetch(path, opts){
     Object.assign({}, opts, { headers: headers }));
 }
 
+// ── Submit task ───────────────────────────────────────────────
 async function submitTask(tplId, params){
+  el('genStepLabel').textContent = '提交任务中…';
+  el('genStepSub') && (el('genStepSub').textContent = '正在发送到 AI 服务器…');
   var body = JSON.stringify({
-    templateId: tplId,
+    templateId:   tplId,
     clientUserId: 'promptchan-user-' + (currentUser ? currentUser.id : 'anon'),
-    parameters: params
+    parameters:   params
   });
-  var r = await apiFetch('/api/frwapi/v1/tasks', { method:'POST', headers:{'Content-Type':'application/json'}, body: body });
+  console.log('[API] submit tpl:', tplId, '\nparams:', JSON.stringify(params, null, 2));
+  var r = await apiFetch('/api/frwapi/v1/tasks', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: body
+  });
   var text = await r.text();
+  console.log('[API] status:', r.status, 'body:', text.slice(0,300));
   if(!r.ok){
     var msg = 'HTTP ' + r.status + ': ' + text.slice(0,200);
-    try{ var j=JSON.parse(text); msg=j.message||(j.error&&j.error.message)||msg; }catch(e){}
+    try{ var j=JSON.parse(text); msg=j.message||(j.error&&(j.error.message||JSON.stringify(j.error)))||j.msg||msg; }catch(e){}
     throw new Error(msg);
   }
   var data = JSON.parse(text);
-  if(!data.success) throw new Error((data.error&&data.error.message)||data.message||'提交失败');
+  if(!data.success) throw new Error((data.error&&(data.error.message||JSON.stringify(data.error)))||data.message||'提交失败');
   return data.data.taskId;
 }
 
+// ── Poll task ─────────────────────────────────────────────────
 async function pollTask(taskId){
   var r = await apiFetch('/api/frwapi/v1/tasks/' + taskId);
   if(!r.ok) throw new Error('查询失败 ' + r.status);
   var d = await r.json();
+  console.log('[API] poll', taskId.slice(0,10), '->', d.data && d.data.status);
   if(!d.success) throw new Error('查询失败');
   return d.data;
 }
 
+// ── Poll loop ─────────────────────────────────────────────────
 function startPolling(taskId){
   return new Promise(function(resolve, reject){
     var retries = 0;
+    el('genStepLabel').textContent = '任务已提交，等待结果…';
+    el('genStepSub') && (el('genStepSub').textContent = '任务 ID: ' + taskId.slice(0,12) + '…');
     function tick(){
       if(genCancelled){ reject(new Error('cancelled')); return; }
       pollTask(taskId).then(function(d){
         if(d.status === 'completed') resolve(d);
-        else if(d.status === 'failed') reject(new Error(d.errorMessage || '任务失败'));
+        else if(d.status === 'failed') reject(new Error(d.errorMessage || '任务执行失败'));
         else { retries = 0; _pollTimer = setTimeout(tick, 4000); }
       }).catch(function(){
         retries++;
-        if(retries > 8){ reject(new Error('轮询超时')); return; }
+        if(retries > 8){ reject(new Error('轮询超时，请稍后重试')); return; }
         _pollTimer = setTimeout(tick, 6000);
       });
     }
@@ -1778,6 +1792,7 @@ function startPolling(taskId){
   });
 }
 
+// ── Progress animation ────────────────────────────────────────
 var IMG_STEPS = [
   ['正在连接 AI 引擎…','初始化生成管线'],
   ['提示词解析中…','语义理解与风格匹配'],
@@ -1785,28 +1800,37 @@ var IMG_STEPS = [
   ['细节优化中…','高频纹理 & 光影校正'],
   ['图像后处理…','超分辨率增强']
 ];
+var VID_STEPS = [
+  ['分析提示词…','运动语义与场景理解'],
+  ['生成关键帧…','时序一致性建模'],
+  ['运动插值中…','光流轨迹平滑'],
+  ['视频渲染中…','逐帧色彩校正'],
+  ['编码输出中…','H.264 压缩与封装']
+];
 var _progStart = 0;
 
-function startProgressAnim(){
+function startProgressAnim(isVideo){
   var bar = el('genProgressBar'), pctEl = el('genPct'), stepIdx = 0, pct = 0;
+  var steps = isVideo ? VID_STEPS : IMG_STEPS;
+  var cap   = isVideo ? 90 : 88;
+  var speed = isVideo ? 100 : 35;
   _progStart = Date.now();
   if(bar) bar.style.width = '0%';
   if(pctEl) pctEl.textContent = '0%';
-  el('genStepLabel').textContent = IMG_STEPS[0][0];
-  el('genStepSub').textContent   = IMG_STEPS[0][1];
+  el('genStepLabel').textContent = steps[0][0];
+  el('genStepSub') && (el('genStepSub').textContent = steps[0][1]);
   _progInterval = setInterval(function(){
     if(genCancelled){ clearInterval(_progInterval); return; }
     var elapsed = (Date.now() - _progStart) / 1000;
-    var cap = 88, speed = 35;
     var target = Math.min(cap * (1 - Math.exp(-elapsed / speed)), cap);
     pct = Math.max(pct, target);
     if(bar) bar.style.width = pct.toFixed(1) + '%';
     if(pctEl) pctEl.textContent = Math.round(pct) + '%';
-    var si = Math.min(Math.floor(pct / (cap / IMG_STEPS.length)), IMG_STEPS.length - 1);
+    var si = Math.min(Math.floor(pct / (cap / steps.length)), steps.length - 1);
     if(si !== stepIdx){
       stepIdx = si;
-      el('genStepLabel').textContent = IMG_STEPS[si][0];
-      el('genStepSub').textContent   = IMG_STEPS[si][1];
+      el('genStepLabel').textContent = steps[si][0];
+      el('genStepSub') && (el('genStepSub').textContent = steps[si][1]);
     }
   }, 600);
 }
@@ -1817,23 +1841,142 @@ function finishProgressAnim(){
   if(bar) bar.style.width = '100%';
   if(pctEl) pctEl.textContent = '100%';
   el('genStepLabel').textContent = '生成完成！';
-  el('genStepSub').textContent   = '';
+  el('genStepSub') && (el('genStepSub').textContent = '即将展示结果…');
 }
 
-function getActiveTitle(){
-  var ids = ['workTitle','workTitle2','workTitle3','workTitleUp'];
-  for(var i=0;i<ids.length;i++){
-    var v = el(ids[i]) && el(ids[i]).value.trim();
-    if(v) return v;
+// ── Extract result URL ────────────────────────────────────────
+function extractResultUrl(data, isVideo){
+  // Try all known result fields
+  var r = data.results && data.results[0];
+  if(r){
+    if(isVideo) return r.videoUrl || r.url || r.video_url || r.mp4Url;
+    return r.imageUrl || r.url || r.image_url;
   }
-  return '我的作品 ' + new Date().toLocaleTimeString();
+  return data.outputUrl || (data.outputs&&data.outputs[0]&&data.outputs[0].url)
+    || (isVideo ? data.videos&&data.videos[0] : data.images&&data.images[0]);
 }
 
+// ── Build parameters (identical to admin panel logic) ─────────
+async function buildParams(mode){
+  var params = {};
+
+  if(mode === 'txt2img'){
+    var prompt = (el('promptInput').value||'').trim();
+    var neg    = (el('negPrompt').value||'').trim();
+    var style  = el('styleSelect') ? el('styleSelect').value : '';
+    if(!prompt) throw new Error('请输入提示词');
+    params = {
+      prompt:         prompt + (style ? ', ' + style : ''),
+      negativePrompt: neg || 'ugly, deformed, blurry, low quality',
+      width: '768', height: '1024', n: '1', steps: '30', cfgScale: '7', seed: '-1'
+    };
+
+  } else if(mode === 'img2img'){
+    var prompt2 = (el('promptInput2').value||'').trim();
+    if(!prompt2) throw new Error('请输入提示词');
+    var i2iFile = el('i2i-file') && el('i2i-file').files && el('i2i-file').files[0];
+    if(!i2iFile) throw new Error('请上传参考图片');
+    var i2iUrl = await uploadToImgBB(i2iFile);
+    params = {
+      imageUrl: i2iUrl, prompt: prompt2,
+      width: '1024', height: '1024', n: '1', steps: '30', cfgScale: '7.5', seed: '-1'
+    };
+
+  } else if(mode === 'faceswap'){
+    var tFile = el('fs-target-file') && el('fs-target-file').files && el('fs-target-file').files[0];
+    var sFile = el('fs-source-file') && el('fs-source-file').files && el('fs-source-file').files[0];
+    if(!tFile) throw new Error('请上传目标图片（要换脸的图）');
+    if(!sFile) throw new Error('请上传人脸来源图片');
+    el('genStepLabel').textContent = '上传换脸图片中…';
+    var img1Url = await uploadToImgBB(sFile);  // 人脸来源
+    var img2Url = await uploadToImgBB(tFile);  // 目标图（身体）
+    // 文档：img1=脸部来源, img2=目标图（与管理端一致）
+    params = { img1: img1Url, img2: img2Url };
+
+  } else if(mode === 'txt2vid'){
+    var t2vPrompt = (el('t2v-prompt').value||'').trim();
+    if(!t2vPrompt) throw new Error('请输入视频描述');
+    params = { prompt: t2vPrompt, width: '1024', height: '576' };
+
+  } else if(mode === 'img2vid'){
+    var i2vFile = el('i2v-file') && el('i2v-file').files && el('i2v-file').files[0];
+    if(!i2vFile) throw new Error('请上传起始帧图片');
+    var i2vMotion = (el('i2v-prompt').value||'').trim();
+    var i2vUrl = await uploadToImgBB(i2vFile);
+    // 根据图片实际尺寸计算（与管理端逻辑一致）
+    var i2vDims = await new Promise(function(res){
+      var im = new Image();
+      im.onload = function(){
+        var w=im.naturalWidth||1024, h=im.naturalHeight||1024;
+        var scale=Math.min(1024/Math.max(w,h),1);
+        w=Math.max(Math.round(w*scale/64)*64,512);
+        h=Math.max(Math.round(h*scale/64)*64,512);
+        res({w:String(w),h:String(h)});
+      };
+      im.onerror=function(){ res({w:'768',h:'1024'}); };
+      im.src=i2vUrl;
+    });
+    params = {
+      imageUrl: i2vUrl,
+      prompt:   i2vMotion || 'the character moves naturally, smooth cinematic motion',
+      width:    i2vDims.w,
+      height:   i2vDims.h
+    };
+
+  } else if(mode === 'undress'){
+    var ocFile = el('oc-file') && el('oc-file').files && el('oc-file').files[0];
+    if(!ocFile) throw new Error('请上传人物图片');
+    var ocUrl = await uploadToImgBB(ocFile);
+    // sceneName 与管理端一致（对应文档中的场景名）
+    var sceneMap = {
+      natural:   'nude_master_retro_style',
+      anime:     'anime_nude_style',
+      artistic:  'artistic_nude_style',
+      fantasy:   'fantasy_nude_style'
+    };
+    params = { imageUrl: ocUrl, sceneName: sceneMap[selectedUndressStyle] || 'nude_master_retro_style' };
+  }
+
+  return params;
+}
+
+// ── Main generate entry ───────────────────────────────────────
 async function startGenerate(){
   if(!currentUser){ showToast('error','请先登录'); return; }
   if((currentUser.credits||0) <= 0 && currentUser.plan === 'free' && currentMode !== 'upload'){
-    showToast('error','积分不足！请升级套餐或明日再试'); return;
+    showToast('error','积分不足！请升级套餐'); return;
   }
+  var mode = currentMode;
+
+  if(mode === 'upload'){
+    var upFile = el('up-file') && el('up-file').files && el('up-file').files[0];
+    if(!upFile){ showToast('error','请选择要上传的文件'); return; }
+    el('genStepLabel').textContent = '上传文件中…';
+    el('genStepSub') && (el('genStepSub').textContent = '');
+    el('genBtn').disabled = true;
+    el('resultPlaceholder').style.display = 'none';
+    el('genProgressWrap').style.display   = 'block';
+    el('resultImg').style.display         = 'none';
+    el('resultActions').style.display     = 'none';
+    try{
+      var upUrl = await uploadToImgBB(upFile);
+      finishProgressAnim();
+      _lastResult = { url: upUrl, mode: mode, isVideo: false };
+      setTimeout(function(){
+        el('genProgressWrap').style.display = 'none';
+        el('resultImg').src = upUrl;
+        el('resultImg').style.display = 'block';
+        el('resultActions').style.display = 'flex';
+      }, 400);
+    } catch(e){
+      el('genProgressWrap').style.display = 'none';
+      el('resultPlaceholder').style.display = 'flex';
+      showToast('error','上传失败: ' + e.message);
+    }
+    el('genBtn').disabled = false;
+    return;
+  }
+
   genCancelled = false;
   el('genBtn').disabled = true;
   el('resultPlaceholder').style.display = 'none';
@@ -1841,115 +1984,79 @@ async function startGenerate(){
   el('resultImg').style.display         = 'none';
   el('resultActions').style.display     = 'none';
   el('submitNotice').style.display      = 'none';
-  startProgressAnim();
 
-  try{
-    var resultUrl = null;
-    var mode = currentMode;
+  var isVideo = (mode === 'txt2vid' || mode === 'img2vid');
+  startProgressAnim(isVideo);
 
-    if(mode === 'upload'){
-      var upFile = el('up-file') && el('up-file').files && el('up-file').files[0];
-      if(!upFile){ showToast('error','请选择要上传的文件'); resetResult(); el('genBtn').disabled=false; return; }
-      el('genStepLabel').textContent = '上传文件中…';
-      resultUrl = await uploadToImgBB(upFile);
-
-    } else if(mode === 'txt2img'){
-      var prompt = el('promptInput').value.trim();
-      if(!prompt){ showToast('error','请输入提示词'); resetResult(); el('genBtn').disabled=false; return; }
-      var style  = el('styleSelect').value;
-      var params = {
-        prompt: prompt + (style ? ', ' + style : ''),
-        negative_prompt: (el('negPrompt').value || '').trim() || 'ugly, deformed, blurry, low quality',
-        num_images: 1
-      };
-      var taskId = await submitTask(TPLS.txt2img, params);
-      var result = await startPolling(taskId);
-      resultUrl = result.outputUrl || (result.outputs&&result.outputs[0]&&result.outputs[0].url) || (result.images&&result.images[0]);
-
-    } else if(mode === 'img2img'){
-      var i2iFile = el('i2i-file') && el('i2i-file').files && el('i2i-file').files[0];
-      var p2 = el('promptInput2').value.trim();
-      if(!i2iFile){ showToast('error','请上传参考图'); resetResult(); el('genBtn').disabled=false; return; }
-      if(!p2){ showToast('error','请输入提示词'); resetResult(); el('genBtn').disabled=false; return; }
-      el('genStepLabel').textContent = '上传参考图中…';
-      var i2iUrl = await uploadToImgBB(i2iFile);
-      var taskId2 = await submitTask(TPLS.img2img, { prompt: p2, image_url: i2iUrl });
-      var result2 = await startPolling(taskId2);
-      resultUrl = result2.outputUrl || (result2.outputs&&result2.outputs[0]&&result2.outputs[0].url) || (result2.images&&result2.images[0]);
-
-    } else if(mode === 'faceswap'){
-      var tFile = el('fs-target-file') && el('fs-target-file').files && el('fs-target-file').files[0];
-      var sFile = el('fs-source-file') && el('fs-source-file').files && el('fs-source-file').files[0];
-      if(!tFile||!sFile){ showToast('error','请上传目标脸和底图'); resetResult(); el('genBtn').disabled=false; return; }
-      el('genStepLabel').textContent = '上传图片中…';
-      var tUrl = await uploadToImgBB(tFile);
-      var sUrl = await uploadToImgBB(sFile);
-      var taskId3 = await submitTask(TPLS.faceswap, { target_image_url: tUrl, source_image_url: sUrl });
-      var result3 = await startPolling(taskId3);
-      resultUrl = result3.outputUrl || (result3.outputs&&result3.outputs[0]&&result3.outputs[0].url) || (result3.images&&result3.images[0]);
-
-    } else if(mode === 'txt2vid'){
-      var t2vPrompt = (el('t2v-prompt').value||'').trim();
-      if(!t2vPrompt){ showToast('error','请输入视频描述'); resetResult(); el('genBtn').disabled=false; return; }
-      el('genStepLabel').textContent = '提交视频任务…';
-      var t2vParams = { prompt: t2vPrompt, duration: selectedDuration, num_videos: 1 };
-      var taskIdT2V = await submitTask(TPLS.txt2vid, t2vParams);
-      var resultT2V = await startPolling(taskIdT2V);
-      resultUrl = resultT2V.outputUrl || (resultT2V.outputs&&resultT2V.outputs[0]&&resultT2V.outputs[0].url) || (resultT2V.videos&&resultT2V.videos[0]);
-
-    } else if(mode === 'img2vid'){
-      var i2vFile = el('i2v-file') && el('i2v-file').files && el('i2v-file').files[0];
-      if(!i2vFile){ showToast('error','请上传参考图片'); resetResult(); el('genBtn').disabled=false; return; }
-      el('genStepLabel').textContent = '上传图片中…';
-      var i2vImgUrl = await uploadToImgBB(i2vFile);
-      var i2vMotion = (el('i2v-prompt').value||'').trim();
-      var i2vParams = { image_url: i2vImgUrl, duration: selectedDuration2, prompt: i2vMotion || '', num_videos: 1 };
-      var taskIdI2V = await submitTask(TPLS.img2vid, i2vParams);
-      var resultI2V = await startPolling(taskIdI2V);
-      resultUrl = resultI2V.outputUrl || (resultI2V.outputs&&resultI2V.outputs[0]&&resultI2V.outputs[0].url) || (resultI2V.videos&&resultI2V.videos[0]);
-
-    } else if(mode === 'undress'){
-      var ocFile = el('oc-file') && el('oc-file').files && el('oc-file').files[0];
-      if(!ocFile){ showToast('error','请上传人物图片'); resetResult(); el('genBtn').disabled=false; return; }
-      el('genStepLabel').textContent = '上传图片中…';
-      var ocImgUrl = await uploadToImgBB(ocFile);
-      var ocStyleMap = { natural:'realistic, natural skin', anime:'anime style', artistic:'artistic, fine art', fantasy:'fantasy, ethereal' };
-      var ocParams = { image_url: ocImgUrl, style: ocStyleMap[selectedUndressStyle] || 'natural', num_images: 1 };
-      var taskIdOC = await submitTask(TPLS.undress, ocParams);
-      var resultOC = await startPolling(taskIdOC);
-      resultUrl = resultOC.outputUrl || (resultOC.outputs&&resultOC.outputs[0]&&resultOC.outputs[0].url) || (resultOC.images&&resultOC.images[0]);
-    }
-
-    if(!resultUrl) throw new Error('未获取到生成结果，请重试');
-
-    finishProgressAnim();
-    _lastResult = { url: resultUrl, mode: mode };
-
-    setTimeout(function(){
+  buildParams(mode)
+    .then(function(params){
+      if(genCancelled) throw new Error('cancelled');
+      return submitTask(TPLS[mode === 'undress' ? 'undress' : mode], params);
+    })
+    .then(function(taskId){
+      if(genCancelled) throw new Error('cancelled');
+      return startPolling(taskId);
+    })
+    .then(function(result){
+      if(genCancelled) return;
+      finishProgressAnim();
+      var url = extractResultUrl(result, isVideo);
+      if(!url) throw new Error('未获取到结果 URL\n\n原始数据: ' + JSON.stringify(result).slice(0,300));
+      _lastResult = { url: url, mode: mode, isVideo: isVideo };
+      setTimeout(function(){
+        el('genProgressWrap').style.display = 'none';
+        if(isVideo){
+          el('resultImg').style.display = 'none';
+          var vWrap = el('resultVideoWrap');
+          if(!vWrap){
+            vWrap = document.createElement('div');
+            vWrap.id = 'resultVideoWrap';
+            vWrap.style.cssText = 'position:relative;border-radius:12px;overflow:hidden;background:#000';
+            var vid = document.createElement('video');
+            vid.id = 'resultVideo';
+            vid.controls = true;
+            vid.autoplay = true;
+            vid.loop = true;
+            vid.style.cssText = 'width:100%;max-height:70vh;display:block';
+            vWrap.appendChild(vid);
+            var badge = document.createElement('div');
+            badge.className = 'vid-result-badge';
+            badge.innerHTML = '<i class="fa fa-film"></i> 视频';
+            vWrap.appendChild(badge);
+            el('resultArea').insertBefore(vWrap, el('resultActions'));
+          }
+          el('resultVideoWrap').style.display = '';
+          el('resultVideo').src = url;
+        } else {
+          var vw = el('resultVideoWrap');
+          if(vw) vw.style.display = 'none';
+          el('resultImg').src = url;
+          el('resultImg').style.display = 'block';
+        }
+        el('resultActions').style.display = 'flex';
+        // 扣除积分
+        if(currentUser.plan === 'free'){
+          var newCredits = Math.max(0, (currentUser.credits||0) - 1);
+          currentUser.credits = newCredits;
+          var cd = el('creditsDisplay'); if(cd) cd.textContent = newCredits;
+          var pc = el('planCredits');    if(pc) pc.textContent = newCredits;
+          sPatch('platform_users', {id: currentUser.id}, {credits: newCredits}).catch(function(){});
+        }
+      }, 500);
+    })
+    .catch(function(e){
+      clearInterval(_progInterval);
+      if(_pollTimer) clearTimeout(_pollTimer);
+      if(e.message === 'cancelled'){ el('genBtn').disabled=false; return; }
       el('genProgressWrap').style.display = 'none';
-      var img = el('resultImg');
-      img.src = resultUrl; img.style.display = 'block';
-      el('resultActions').style.display = 'flex';
-      // Deduct credit (free plan, non-upload)
-      if(currentUser.plan === 'free' && mode !== 'upload'){
-        var newCredits = Math.max(0, (currentUser.credits||0) - 1);
-        currentUser.credits = newCredits;
-        el('creditsDisplay').textContent = newCredits;
-        el('planCredits').textContent    = newCredits;
-        sPatch('platform_users', {id: currentUser.id}, {credits: newCredits}).catch(function(){});
-      }
-    }, 500);
-
-  } catch(e){
-    if(e.message === 'cancelled'){ el('genBtn').disabled=false; return; }
-    clearInterval(_progInterval);
-    el('genProgressWrap').style.display = 'none';
-    el('resultPlaceholder').style.display = 'flex';
-    showToast('error', '生成失败: ' + e.message);
-  }
-  el('genBtn').disabled = false;
+      el('resultPlaceholder').style.display = 'flex';
+      showToast('error', '❌ 生成失败: ' + e.message);
+      console.error('[DreamAI]', e);
+    })
+    .finally(function(){
+      el('genBtn').disabled = false;
+    });
 }
-
 function downloadResult(){
   if(!_lastResult) return;
   var a = document.createElement('a'); a.href = _lastResult.url;
