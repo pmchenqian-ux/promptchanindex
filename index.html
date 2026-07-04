@@ -2102,6 +2102,18 @@ function downloadResult(){
   a.download = 'promptchan_' + Date.now() + '.jpg'; a.target = '_blank'; a.click();
 }
 
+// ── 获取当前模式的标题输入 ────────────────────────────────────
+function getActiveTitle(){
+  var ids = ['workTitle','workTitle2','workTitle3','workTitleUp','workTitleT2V','workTitleI2V','workTitleOC'];
+  for(var i=0;i<ids.length;i++){
+    var inp = el(ids[i]);
+    if(inp && inp.value.trim()) return inp.value.trim();
+  }
+  var modeNames = {txt2img:'文生图作品',img2img:'图生图作品',faceswap:'换脸作品',
+    upload:'上传作品',txt2vid:'文生视频',img2vid:'图生视频',undress:'AI创作'};
+  return (modeNames[currentMode] || '我的作品') + ' ' + new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+}
+
 // ── 保存到素材库（生成后立即调用）──────────────────────────────
 var _savedWorkId  = null;  // 本次生成对应的 works.id
 var _savedMatId   = null;  // 本次生成对应的 user_materials.id
