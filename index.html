@@ -1368,6 +1368,17 @@ async function loadData(){
   }
 }
 
+// 实时从 DB 拉取「我的作品」（包含审核状态）
+async function loadMyWorksFromDB(){
+  if(!currentUser) return;
+  try{
+    // 从 works 表拉本人所有记录
+    var rows = await sGet('works?creator=eq.' + encodeURIComponent(currentUser.username) + '&order=id.desc&limit=200');
+    MY_WORKS = rows || [];
+    renderMyWorks();
+  } catch(e){ console.warn('loadMyWorksFromDB:', e.message); }
+}
+
 // ══════════════════════════════════════════
 //  NAVIGATION
 // ══════════════════════════════════════════
@@ -1378,7 +1389,8 @@ function showPage(name){
   document.querySelectorAll('.tb-nav-item').forEach(function(n){ n.classList.remove('active'); });
   var ni = el('nav-' + name);
   if(ni) ni.classList.add('active');
-  if(name === 'myworks')   renderMyWorks();
+  if(name === 'explore')   loadData();          // 每次进入探索页重新拉取最新数据
+  if(name === 'myworks')   loadMyWorksFromDB(); // 实时拉取我的作品
   if(name === 'materials') renderMaterials();
   if(name === 'chat')      initChat();
 }
@@ -2170,7 +2182,7 @@ async function saveUserWork(){
       status:     'pending'
     };
     await sPost('user_materials', matRow);
-    MY_MATS.unshift(matRow);
+    MY_MATS.unshift(Object.assign({}, matRow));
     _savedMatId = matId;
 
     // 3. 写入 review_queue（管理端可见，等待审核公开）
