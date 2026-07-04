@@ -348,6 +348,18 @@ button{font-family:inherit;cursor:pointer}
 .upg-gems-tab{display:none;flex-direction:column;align-items:center;padding:20px 0}
 .upg-gems-tab.active{display:flex}
 
+.mode-btn-video{border-color:rgba(6,182,212,.3)!important;color:var(--cyan)!important}
+.mode-btn-video:hover,.mode-btn-video.active{background:rgba(6,182,212,.12)!important;border-color:var(--cyan)!important;color:var(--cyan)!important}
+.mode-btn-hot{border-color:rgba(239,68,68,.3)!important;color:#f87171!important}
+.mode-btn-hot:hover,.mode-btn-hot.active{background:rgba(239,68,68,.12)!important;border-color:#f87171!important;color:#f87171!important}
+.vid-dur-btn{padding:7px 20px;border-radius:8px;border:1px solid var(--border2);background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .18s}
+.vid-dur-btn.active{background:rgba(6,182,212,.15);border-color:var(--cyan);color:var(--cyan)}
+.undress-tip{background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:10px 14px;font-size:12px;color:#fca5a5;display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.undress-style-btn{padding:10px 8px;border-radius:9px;border:1px solid var(--border2);background:var(--card2);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;text-align:center}
+.undress-style-btn:hover{border-color:rgba(239,68,68,.4);color:#f87171}
+.undress-style-btn.active{background:rgba(239,68,68,.1);border-color:#f87171;color:#f87171}
+.vid-result-badge{position:absolute;top:10px;left:10px;background:rgba(6,182,212,.85);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;display:flex;align-items:center;gap:5px}
+
 /* DB LOADING */
 #dbLoadingOverlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 .db-spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--purple);border-radius:50%;animation:spin .8s linear infinite}
@@ -466,6 +478,9 @@ select option{background:var(--card2)}
         <button class="mode-btn" id="modeBtn-img2img" onclick="setMode('img2img')"><i class="fa fa-clone"></i> 图生图</button>
         <button class="mode-btn" id="modeBtn-faceswap" onclick="setMode('faceswap')"><i class="fa fa-user-circle"></i> 换脸</button>
         <button class="mode-btn" id="modeBtn-upload" onclick="setMode('upload')"><i class="fa fa-cloud-upload"></i> 上传</button>
+        <button class="mode-btn mode-btn-video" id="modeBtn-txt2vid" onclick="setMode('txt2vid')"><i class="fa fa-film"></i> 文生视频</button>
+        <button class="mode-btn mode-btn-video" id="modeBtn-img2vid" onclick="setMode('img2vid')"><i class="fa fa-video-camera"></i> 图生视频</button>
+        <button class="mode-btn mode-btn-hot" id="modeBtn-undress" onclick="setMode('undress')"><i class="fa fa-fire"></i> 一键脱外衣</button>
       </div>
 
       <!-- TXT2IMG panel -->
@@ -583,6 +598,99 @@ select option{background:var(--card2)}
         <div class="cs-section">
           <span class="cs-label"><i class="fa fa-align-left"></i> 描述</span>
           <textarea class="prompt-area" id="upDesc" rows="3" placeholder="作品描述、创作背景…"></textarea>
+        </div>
+      </div>
+
+      <!-- TXT2VID panel -->
+      <div id="panel-txt2vid" style="display:none">
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-film"></i> 视频描述</span>
+          <textarea class="prompt-area" id="t2v-prompt" rows="4" placeholder="描述视频场景与动作，例如：girl walking in cherry blossom park, slow motion, cinematic, 4K…"></textarea>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="magicEnhanceTarget('t2v-prompt')"><i class="fa fa-magic"></i> 魔法增强</button>
+            <button class="btn btn-ghost" style="font-size:12px" onclick="el('t2v-prompt').value=''"><i class="fa fa-times"></i></button>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-tag"></i> 快捷标签</span>
+          <div class="tag-row">
+            <span class="tag-chip" onclick="addTagTo(this,'t2v-prompt')">Cinematic</span>
+            <span class="tag-chip" onclick="addTagTo(this,'t2v-prompt')">Slow motion</span>
+            <span class="tag-chip" onclick="addTagTo(this,'t2v-prompt')">4K</span>
+            <span class="tag-chip" onclick="addTagTo(this,'t2v-prompt')">Smooth camera</span>
+            <span class="tag-chip" onclick="addTagTo(this,'t2v-prompt')">Bokeh</span>
+            <span class="tag-chip" onclick="addTagTo(this,'t2v-prompt')">Golden hour</span>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-clock-o"></i> 视频时长</span>
+          <div style="display:flex;gap:8px">
+            <button class="vid-dur-btn active" id="dur-5" onclick="selectDuration(this,5)">5秒</button>
+            <button class="vid-dur-btn" id="dur-10" onclick="selectDuration(this,10)">10秒</button>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitleT2V" placeholder="给你的视频起个名字…">
+        </div>
+      </div>
+
+      <!-- IMG2VID panel -->
+      <div id="panel-img2vid" style="display:none">
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-image"></i> 参考图片</span>
+          <div class="upload-zone" onclick="document.getElementById('i2v-file').click()">
+            <input type="file" id="i2v-file" accept="image/*" style="display:none" onchange="previewUpload('i2v-preview',this)">
+            <i class="fa fa-cloud-upload"></i>
+            <p>上传参考图，AI 将为它生成动态视频</p>
+          </div>
+          <img id="i2v-preview" class="upload-preview">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-align-left"></i> 运动描述 <small style="font-weight:400">(可选)</small></span>
+          <textarea class="prompt-area" id="i2v-prompt" rows="3" placeholder="描述期望的运动方式，例如：gentle breeze, hair flowing, slow zoom in…" style="min-height:0"></textarea>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-clock-o"></i> 视频时长</span>
+          <div style="display:flex;gap:8px">
+            <button class="vid-dur-btn active" id="dur2-5" onclick="selectDuration2(this,5)">5秒</button>
+            <button class="vid-dur-btn" id="dur2-10" onclick="selectDuration2(this,10)">10秒</button>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitleI2V" placeholder="给你的视频起个名字…">
+        </div>
+      </div>
+
+      <!-- UNDRESS panel -->
+      <div id="panel-undress" style="display:none">
+        <div class="undress-tip">
+          <i class="fa fa-lock"></i>
+          <span>仅供成年用户使用，生成内容需通过审核后方可发布</span>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-user"></i> 上传人物图片</span>
+          <div class="upload-zone" onclick="document.getElementById('oc-file').click()">
+            <input type="file" id="oc-file" accept="image/*" style="display:none" onchange="previewUpload('oc-preview',this)">
+            <i class="fa fa-cloud-upload"></i>
+            <p>上传清晰的人物正面图（JPG / PNG）</p>
+            <p style="font-size:10px;color:var(--muted);margin-top:4px">建议：半身像或全身像，无遮挡效果最佳</p>
+          </div>
+          <img id="oc-preview" class="upload-preview">
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-sliders"></i> 风格选择</span>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+            <button class="undress-style-btn active" id="oc-style-natural" onclick="selectUndressStyle(this,'natural')">🌸 自然写实</button>
+            <button class="undress-style-btn" id="oc-style-anime" onclick="selectUndressStyle(this,'anime')">🎌 动漫风格</button>
+            <button class="undress-style-btn" id="oc-style-artistic" onclick="selectUndressStyle(this,'artistic')">🎨 艺术写真</button>
+            <button class="undress-style-btn" id="oc-style-fantasy" onclick="selectUndressStyle(this,'fantasy')">✨ 奇幻风格</button>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
+          <input type="text" class="form-input" id="workTitleOC" placeholder="给你的作品起个名字…">
         </div>
       </div>
 
@@ -1005,7 +1113,10 @@ var WORKER_URL = 'https://orange-wind-30f5.wanxin4149.workers.dev';
 var TPLS = {
   txt2img:'3487741729447088128',
   img2img:'3487780244406931456',
-  faceswap:'3489601654104264513'
+  faceswap:'3489601654104264513',
+  txt2vid:'3487722535879970816',
+  img2vid:'3487718692404334592',
+  undress:'3487798791757631488'
 };
 
 // ══════════════════════════════════════════
@@ -1495,18 +1606,54 @@ function renderMaterials(){
 // ══════════════════════════════════════════
 //  CREATE PAGE
 // ══════════════════════════════════════════
+var selectedDuration  = 5;
+var selectedDuration2 = 5;
+var selectedUndressStyle = 'natural';
+
 function setMode(mode){
   currentMode = mode;
   document.querySelectorAll('.mode-btn').forEach(function(b){ b.classList.remove('active'); });
   var mb = el('modeBtn-' + mode); if(mb) mb.classList.add('active');
-  ['txt2img','img2img','faceswap','upload'].forEach(function(m){
+  ['txt2img','img2img','faceswap','upload','txt2vid','img2vid','undress'].forEach(function(m){
     var p = el('panel-' + m); if(p) p.style.display = m === mode ? '' : 'none';
   });
-  var labels = {txt2img:'开始生成',img2img:'开始生成',faceswap:'开始换脸',upload:'上传作品'};
-  var icons  = {txt2img:'fa-magic',img2img:'fa-clone',faceswap:'fa-user-circle',upload:'fa-cloud-upload'};
+  var labels = {txt2img:'开始生成',img2img:'开始生成',faceswap:'开始换脸',upload:'上传作品',
+                txt2vid:'生成视频',img2vid:'生成视频',undress:'开始生成'};
+  var icons  = {txt2img:'fa-magic',img2img:'fa-clone',faceswap:'fa-user-circle',upload:'fa-cloud-upload',
+                txt2vid:'fa-film',img2vid:'fa-video-camera',undress:'fa-fire'};
   el('genLabel').textContent = labels[mode] || '开始生成';
   el('genIcon').className = 'fa ' + (icons[mode] || 'fa-magic');
   resetResult();
+}
+
+function selectDuration(btn, dur){
+  selectedDuration = dur;
+  document.querySelectorAll('[id^="dur-"]').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+function selectDuration2(btn, dur){
+  selectedDuration2 = dur;
+  document.querySelectorAll('[id^="dur2-"]').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+function selectUndressStyle(btn, style){
+  selectedUndressStyle = style;
+  document.querySelectorAll('.undress-style-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+}
+
+function addTagTo(chip, targetId){
+  var p = el(targetId);
+  var tag = chip.textContent.trim();
+  if(p && !p.value.includes(tag)) p.value = (p.value ? p.value.trim() + ', ' : '') + tag;
+  chip.style.borderColor = 'var(--cyan)'; chip.style.color = 'var(--cyan)';
+}
+
+function magicEnhanceTarget(targetId){
+  var p = el(targetId);
+  if(!p) return;
+  if(!p.value) p.value = 'beautiful cinematic scene, natural lighting';
+  p.value += ', ultra-detailed, cinematic, 4K, smooth motion';
 }
 
 function addTag(elmt){
@@ -1740,6 +1887,37 @@ async function startGenerate(){
       var taskId3 = await submitTask(TPLS.faceswap, { target_image_url: tUrl, source_image_url: sUrl });
       var result3 = await startPolling(taskId3);
       resultUrl = result3.outputUrl || (result3.outputs&&result3.outputs[0]&&result3.outputs[0].url) || (result3.images&&result3.images[0]);
+
+    } else if(mode === 'txt2vid'){
+      var t2vPrompt = (el('t2v-prompt').value||'').trim();
+      if(!t2vPrompt){ showToast('error','请输入视频描述'); resetResult(); el('genBtn').disabled=false; return; }
+      el('genStepLabel').textContent = '提交视频任务…';
+      var t2vParams = { prompt: t2vPrompt, duration: selectedDuration, num_videos: 1 };
+      var taskIdT2V = await submitTask(TPLS.txt2vid, t2vParams);
+      var resultT2V = await startPolling(taskIdT2V);
+      resultUrl = resultT2V.outputUrl || (resultT2V.outputs&&resultT2V.outputs[0]&&resultT2V.outputs[0].url) || (resultT2V.videos&&resultT2V.videos[0]);
+
+    } else if(mode === 'img2vid'){
+      var i2vFile = el('i2v-file') && el('i2v-file').files && el('i2v-file').files[0];
+      if(!i2vFile){ showToast('error','请上传参考图片'); resetResult(); el('genBtn').disabled=false; return; }
+      el('genStepLabel').textContent = '上传图片中…';
+      var i2vImgUrl = await uploadToImgBB(i2vFile);
+      var i2vMotion = (el('i2v-prompt').value||'').trim();
+      var i2vParams = { image_url: i2vImgUrl, duration: selectedDuration2, prompt: i2vMotion || '', num_videos: 1 };
+      var taskIdI2V = await submitTask(TPLS.img2vid, i2vParams);
+      var resultI2V = await startPolling(taskIdI2V);
+      resultUrl = resultI2V.outputUrl || (resultI2V.outputs&&resultI2V.outputs[0]&&resultI2V.outputs[0].url) || (resultI2V.videos&&resultI2V.videos[0]);
+
+    } else if(mode === 'undress'){
+      var ocFile = el('oc-file') && el('oc-file').files && el('oc-file').files[0];
+      if(!ocFile){ showToast('error','请上传人物图片'); resetResult(); el('genBtn').disabled=false; return; }
+      el('genStepLabel').textContent = '上传图片中…';
+      var ocImgUrl = await uploadToImgBB(ocFile);
+      var ocStyleMap = { natural:'realistic, natural skin', anime:'anime style', artistic:'artistic, fine art', fantasy:'fantasy, ethereal' };
+      var ocParams = { image_url: ocImgUrl, style: ocStyleMap[selectedUndressStyle] || 'natural', num_images: 1 };
+      var taskIdOC = await submitTask(TPLS.undress, ocParams);
+      var resultOC = await startPolling(taskIdOC);
+      resultUrl = resultOC.outputUrl || (resultOC.outputs&&resultOC.outputs[0]&&resultOC.outputs[0].url) || (resultOC.images&&resultOC.images[0]);
     }
 
     if(!resultUrl) throw new Error('未获取到生成结果，请重试');
