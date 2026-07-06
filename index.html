@@ -3079,8 +3079,81 @@ function finalizeStreamBubble(bubble, text, char){
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SEND CHAT — AI女友 SSE 流式 API（直连 API_HOST）
+//  SEND CHAT — AI女友 API（同步提交+轮询，通过 Worker 代理）
 // ═══════════════════════════════════════════════════════════
+async function chatAIReply(text, charId, char, sysContent){
+  // 构造消息历史（先system，再历史，最后当前user）
+  var history = chatHistory[charId] || [];
+  var msgs = [{role:'system', content:sysContent}].concat(
+    history.slice(-20).map(function(m){ return {role: m.role==='assistant'?'assistant':'user', content:m.content}; })
+  );
+
+  var reply = '';
+
+  // 方式1：SSE 流式（直连 API_HOST，有 CORS 时会失败）
+  try{
+    var sseResp = await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
+      method:'POST',
+      headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        templateId: TPLS.aigf,
+        clientUserId: 'user-'+(currentUser?currentUser.id:'anon'),
+        parameters:{ model:'aigf-rpmax-kto', prompt:text,
+          extra:{ temperature:0.9, max_tokens:600, messages:msgs } }
+      })
+    });
+    if(sseResp.ok && sseResp.body){
+      var reader=sseResp.body.getReader(), decoder=new TextDecoder(), buf='';
+      while(true){
+        var _r=await reader.read(); if(_r.done) break;
+        buf+=decoder.decode(_r.value,{stream:true});
+        var parts=buf.split('\n'); buf=parts.pop();
+        for(var pi=0;pi<parts.length;pi++){
+          var ln=parts[pi].trim();
+          if(ln==='data: [DONE]') break;
+          if(ln.startsWith('data: ')){
+            try{
+              var obj=JSON.parse(ln.slice(6));
+              if(obj.error) throw new Error(obj.error);
+              var delta=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
+              if(delta&&delta.content){ reply+=delta.content; }
+            }catch(pe){ if(pe.message&&pe.message!=='Unexpected end of JSON input') console.warn('[SSE]',pe.message); }
+          }
+        }
+      }
+      if(reply) return reply;
+    }
+  } catch(e){ console.log('[SSE failed, using poll]', e.message); }
+
+  // 方式2：同步提交+轮询（经 Worker 代理，确保可用）
+  var resp = await apiFetch('/api/frwapi/v1/tasks',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      templateId: TPLS.aigf,
+      clientUserId: 'user-'+(currentUser?currentUser.id:'anon'),
+      parameters:{ model:'aigf-rpmax-kto', prompt:text,
+        extra:{ temperature:0.9, max_tokens:600, messages:msgs } }
+    })
+  });
+  if(!resp.ok) throw new Error('提交失败 '+resp.status+': '+(await resp.text()).slice(0,100));
+  var subData = await resp.json();
+  if(!subData.success) throw new Error(subData.message||'提交失败');
+  var taskId = subData.data.taskId;
+
+  // 轮询结果
+  var result = await startPolling(taskId);
+  console.log('[Chat poll result]', JSON.stringify(result).slice(0,300));
+
+  // 提取文本：metadata.transcript 是标准字段
+  reply = (result.metadata && result.metadata.transcript) ||
+          (result.results && result.results[0] &&
+           (result.results[0].content || result.results[0].text || result.results[0].url)) ||
+          (result.choices && result.choices[0] &&
+           result.choices[0].message && result.choices[0].message.content) || '';
+  return reply;
+}
+
 async function sendChat(){
   if(chatInFlight || !activeChatChar) return;
   var input=el('chatInput');
@@ -3099,75 +3172,31 @@ async function sendChat(){
 
   chatInFlight=true; el('chatSendBtn').disabled=true;
   var bubbleEl=createStreamBubble(char);
-  var fullReply='';
 
+  var scenario=(el('chatScenario')&&el('chatScenario').value.trim())||'';
   var sysContent='你正在扮演「'+char.name+'」。'+(char.description||'一个有趣的AI伴侣。')+
-    ' '+(chatMode==='story'?'沉浸式角色扮演，*斜体*描述动作，简洁生动（50-120字）。':'对话轻松简洁（30-80字）。')+
+    (scenario?' 当前场景：'+scenario:'')+
+    ' '+(chatMode==='story'?'用沉浸式角色扮演风格，*斜体*描述动作，简洁生动（50-120字）。':'对话轻松简洁（30-80字）。')+
     ' 请用中文回复。';
-  var apiMsgs=[{role:'system',content:sysContent}].concat(
-    chatHistory[activeChatChar].map(function(m){ return {role:m.role==='assistant'?'assistant':'user',content:m.content}; })
-  );
 
+  var fullReply='';
   try{
-    // 直接调用 API_HOST（SSE 流式，不经 Worker 代理）
-    var resp=await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
-      method:'POST',
-      headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        templateId:TPLS.aigf,
-        clientUserId:'user-'+(currentUser?currentUser.id:'anon'),
-        parameters:{model:'aigf-rpmax-kto',prompt:text,extra:{temperature:0.9,max_tokens:600,messages:apiMsgs}}
-      })
-    });
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    var reader=resp.body.getReader(), decoder=new TextDecoder(), buf='';
-    while(true){
-      var chunk=await reader.read();
-      if(chunk.done) break;
-      buf+=decoder.decode(chunk.value,{stream:true});
-      var parts=buf.split('\n'); buf=parts.pop();
-      for(var pi=0;pi<parts.length;pi++){
-        var ln=parts[pi].trim();
-        if(!ln||ln===': ping'||ln==='data: [DONE]') continue;
-        if(ln.startsWith('data: ')){
-          try{
-            var obj=JSON.parse(ln.slice(6));
-            var delta=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
-            if(delta&&delta.content){ fullReply+=delta.content; updateStreamBubble(bubbleEl,fullReply); }
-          }catch(pe){}
-        }
-      }
-    }
+    fullReply = await chatAIReply(text, activeChatChar, char, sysContent);
   }catch(e){
-    console.warn('[SSE failed, fallback to poll]',e.message);
-    try{
-      finalizeStreamBubble(bubbleEl,'',char);
-      showTypingIndicator(char);
-      var taskId=await submitTask(TPLS.aigf,{model:'aigf-rpmax-kto',prompt:text,extra:{temperature:0.9,max_tokens:600,messages:apiMsgs}});
-      var result=await startPolling(taskId);
-      var res=result.results&&result.results[0];
-      if(res) fullReply=res.content||res.text||res.message||'';
-      if(!fullReply&&result.choices&&result.choices[0]) fullReply=result.choices[0].message&&result.choices[0].message.content||'';
-      removeTypingIndicator();
-      if(!fullReply) fullReply='（AI 暂无回复，请重试）';
-      appendChatBubble('ai',fullReply,char);
-      bubbleEl=null;
-    }catch(e2){
-      removeTypingIndicator();
-      fullReply='⚠️ 服务暂时不可用，请稍后重试。';
-      appendChatBubble('ai',fullReply,char); bubbleEl=null;
-    }
+    console.error('[sendChat]', e);
+    fullReply='⚠️ 服务暂时不可用（'+e.message.slice(0,40)+'），请稍后重试。';
   }
 
-  if(bubbleEl) finalizeStreamBubble(bubbleEl,fullReply||'⚠️ 无回复',char);
-  if(fullReply){
-    chatHistory[activeChatChar].push({role:'assistant',content:fullReply});
-    saveMsgToDB(activeChatChar,char.name,'assistant',fullReply);
-    char.lastMsg=fullReply.replace(/<[^>]+>/g,'').slice(0,30);
-    char.time=new Date().toLocaleString('zh-CN',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
-    renderChatCharList();
-    if(el('ttsAutoRead')&&el('ttsAutoRead').checked) speakText(fullReply);
-  }
+  if(!fullReply) fullReply='（AI暂无回复，请重试）';
+  finalizeStreamBubble(bubbleEl, fullReply, char);
+
+  chatHistory[activeChatChar].push({role:'assistant',content:fullReply});
+  saveMsgToDB(activeChatChar,char.name,'assistant',fullReply);
+  char.lastMsg=fullReply.replace(/<[^>]+>/g,'').slice(0,30);
+  char.time=new Date().toLocaleString('zh-CN',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  renderChatCharList();
+  if(el('ttsAutoRead')&&el('ttsAutoRead').checked) speakText(fullReply);
+
   chatInFlight=false; el('chatSendBtn').disabled=false; input.focus();
 }
 
@@ -3263,48 +3292,25 @@ async function callProcessUserSpeech(text){
   if(!char) return;
   setCallWave('thinking');
   el('callSubtitle').textContent='你：'+text;
+  el('callStatus').textContent='AI 思考中…';
 
   if(!chatHistory[activeChatChar]) chatHistory[activeChatChar]=[];
   chatHistory[activeChatChar].push({role:'user',content:text});
-  // 也在聊天记录里显示
   appendChatBubble('user',text,char);
   saveMsgToDB(activeChatChar,char.name,'user',text);
 
   var sysContent='你正在和用户进行语音电话通话，扮演「'+char.name+'」。'+(char.description||'')+
-    ' 回复要简短自然（30-60字），像真实通话一样，不要使用特殊符号。请用中文回复。';
-  var apiMsgs=[{role:'system',content:sysContent}].concat(
-    chatHistory[activeChatChar].slice(-10).map(function(m){ return {role:m.role==='assistant'?'assistant':'user',content:m.content}; })
-  );
+    ' 回复要极简短自然（20-50字），像真实电话一样说话，不要用特殊符号或表情。请用中文口语回复。';
 
   var reply='';
   try{
-    var resp=await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
-      method:'POST',
-      headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        templateId:TPLS.aigf,clientUserId:'call-'+(currentUser?currentUser.id:'anon'),
-        parameters:{model:'aigf-rpmax-kto',prompt:text,extra:{temperature:0.9,max_tokens:200,messages:apiMsgs}}
-      })
-    });
-    if(resp.ok){
-      var reader=resp.body.getReader(),decoder=new TextDecoder(),buf='';
-      while(true){
-        var chunk=await reader.read(); if(chunk.done) break;
-        buf+=decoder.decode(chunk.value,{stream:true});
-        var parts=buf.split('\n'); buf=parts.pop();
-        for(var pi=0;pi<parts.length;pi++){
-          var ln=parts[pi].trim();
-          if(ln.startsWith('data: ')&&ln!=='data: [DONE]'){
-            try{ var obj=JSON.parse(ln.slice(6)),d=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
-              if(d&&d.content){ reply+=d.content; el('callSubtitle').textContent=char.name+'：'+reply; }
-            }catch(e){}
-          }
-        }
-      }
-    }
-  }catch(e){ console.warn('[Call AI]',e.message); }
-
+    reply = await chatAIReply(text, activeChatChar, char, sysContent);
+  }catch(e){
+    console.error('[callAI]',e);
+    reply='我在这里，请继续说。';
+  }
   if(!reply) reply='我在这里，请继续说。';
+
   el('callSubtitle').textContent=char.name+'：'+reply;
   chatHistory[activeChatChar].push({role:'assistant',content:reply});
   appendChatBubble('ai',reply,char);
@@ -3312,17 +3318,16 @@ async function callProcessUserSpeech(text){
   char.lastMsg=reply.slice(0,30);
   renderChatCharList();
 
-  // AI 自动语音回复（通话模式必须朗读）
+  // AI 自动语音回复
   setCallWave('speaking');
-  el('callStatus').textContent = 'AI 正在说话…';
-  var afterSpeak = function(){
+  el('callStatus').textContent='AI 正在说话…';
+  speakBrowser(reply, function(){
     if(!_callActive) return;
-    el('callStatus').textContent = '通话中';
+    el('callStatus').textContent='通话中';
     setCallWave('listening');
     el('callSubtitle').textContent='（请开口说话…）';
-    setTimeout(function(){ if(_callActive && !_callMuted) callStartListening(); }, 300);
-  };
-  speakBrowser(reply, afterSpeak);
+    setTimeout(function(){ if(_callActive && !_callMuted) callStartListening(); },300);
+  });
 }
 
 function setCallWave(state){
