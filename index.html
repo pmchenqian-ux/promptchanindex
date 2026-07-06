@@ -130,6 +130,8 @@ button{font-family:inherit;cursor:pointer}
 .upload-zone p{font-size:12px;color:var(--muted)}
 .upload-preview{width:100%;border-radius:8px;max-height:140px;object-fit:cover;display:none;margin-top:8px}
 .result-area{flex:1;background:var(--card);border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:420px;position:relative;overflow:hidden}
+#resultVideoWrap{width:100%;align-self:stretch;display:none;flex-direction:column;position:relative;border-radius:12px;overflow:hidden;background:#000}
+#resultVideo{width:100%;max-height:72vh;display:block;object-fit:contain}
 .result-placeholder{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--muted)}
 .result-placeholder i{font-size:36px;opacity:.3}
 .result-placeholder p{font-size:13px}
@@ -722,6 +724,10 @@ select option{background:var(--card2)}
           <button class="btn btn-ghost" style="margin-top:16px;font-size:12px" onclick="cancelGenerate()"><i class="fa fa-stop"></i> 取消</button>
         </div>
         <img id="resultImg" style="display:none;max-width:90%;max-height:480px;border-radius:10px;object-fit:contain">
+        <div id="resultVideoWrap" style="display:none;width:100%;position:relative;border-radius:12px;overflow:hidden;background:#000;align-self:stretch">
+          <video id="resultVideo" controls autoplay loop style="width:100%;max-height:70vh;display:block"></video>
+          <div class="vid-result-badge"><i class="fa fa-film"></i> 视频</div>
+        </div>
       </div>
       <div id="resultActions" class="result-actions">
         <button class="btn btn-primary" id="saveWorkBtn" onclick="saveUserWork()"><i class="fa fa-save"></i> 保存到素材库</button>
@@ -1780,7 +1786,13 @@ function resetResult(){
   el('resultImg').style.display         = 'none';
   el('resultActions').style.display     = 'none';
   el('submitNotice').style.display      = 'none';
+  var vw = el('resultVideoWrap');
+  if(vw){ vw.style.display = 'none'; }
+  var vid = el('resultVideo');
+  if(vid){ vid.pause(); vid.src = ''; }
   _lastResult  = null;
+  _savedWorkId = null;
+  _savedMatId  = null;
   genCancelled = false;
   clearInterval(_progInterval);
   if(_pollTimer) clearTimeout(_pollTimer);
@@ -1936,14 +1948,19 @@ function finishProgressAnim(){
 
 // ── Extract result URL ────────────────────────────────────────
 function extractResultUrl(data, isVideo){
-  // Try all known result fields
-  var r = data.results && data.results[0];
-  if(r){
-    if(isVideo) return r.videoUrl || r.url || r.video_url || r.mp4Url;
-    return r.imageUrl || r.url || r.image_url;
+  // 与管理端一致：遍历 results 数组取第一个有效 URL
+  var results = data.results || [];
+  for(var i=0;i<results.length;i++){
+    var r = results[i];
+    var u = r.url || r.fileUrl || r.videoUrl || r.resultUrl || r.outputUrl || r.imageUrl || r.image_url || r.video_url;
+    if(u) return u;
   }
-  return data.outputUrl || (data.outputs&&data.outputs[0]&&data.outputs[0].url)
-    || (isVideo ? data.videos&&data.videos[0] : data.images&&data.images[0]);
+  // fallback: top-level fields
+  return data.outputUrl || data.url || data.fileUrl || data.resultUrl
+    || (data.outputs&&data.outputs[0]&&(data.outputs[0].url||data.outputs[0].fileUrl))
+    || (isVideo
+      ? (data.videos&&(data.videos[0]&&(data.videos[0].url||data.videos[0])))
+      : (data.images&&(data.images[0]&&(data.images[0].url||data.images[0]))));
 }
 
 // ── Build parameters (identical to admin panel logic) ─────────
@@ -2069,6 +2086,7 @@ async function startGenerate(){
   el('resultPlaceholder').style.display = 'none';
   el('genProgressWrap').style.display   = 'block';
   el('resultImg').style.display         = 'none';
+  el('resultVideoWrap').style.display   = 'none';
   el('resultActions').style.display     = 'none';
   el('submitNotice').style.display      = 'none';
 
@@ -2094,39 +2112,20 @@ async function startGenerate(){
         el('genProgressWrap').style.display = 'none';
         if(isVideo){
           el('resultImg').style.display = 'none';
-          var vWrap = el('resultVideoWrap');
-          if(!vWrap){
-            vWrap = document.createElement('div');
-            vWrap.id = 'resultVideoWrap';
-            vWrap.style.cssText = 'position:relative;border-radius:12px;overflow:hidden;background:#000';
-            var vid = document.createElement('video');
-            vid.id = 'resultVideo';
-            vid.controls = true;
-            vid.autoplay = true;
-            vid.loop = true;
-            vid.style.cssText = 'width:100%;max-height:70vh;display:block';
-            vWrap.appendChild(vid);
-            var badge = document.createElement('div');
-            badge.className = 'vid-result-badge';
-            badge.innerHTML = '<i class="fa fa-film"></i> 视频';
-            vWrap.appendChild(badge);
-            el('resultArea').insertBefore(vWrap, el('resultActions'));
-          }
-          el('resultVideoWrap').style.display = '';
+          el('resultVideoWrap').style.display = 'block';
           el('resultVideo').src = url;
+          el('resultVideo').load();
+          el('resultVideo').play().catch(function(){});
         } else {
-          var vw = el('resultVideoWrap');
-          if(vw) vw.style.display = 'none';
+          el('resultVideoWrap').style.display = 'none';
           el('resultImg').src = url;
           el('resultImg').style.display = 'block';
         }
         el('resultActions').style.display = 'flex';
-        // 重置保存按钮状态
-        var sb = el('saveWorkBtn');
-        if(sb){ sb.disabled=false; sb.className='btn btn-primary'; sb.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
         var pb = el('submitPublicBtn'); if(pb) pb.style.display='none';
         el('submitNotice').style.display='none';
-        // 积分仅展示，不限制生成
+        // 生成完成后自动保存到素材库
+        autoSaveWork();
       }, 500);
     })
     .catch(function(e){
@@ -2144,8 +2143,84 @@ async function startGenerate(){
 }
 function downloadResult(){
   if(!_lastResult) return;
-  var a = document.createElement('a'); a.href = _lastResult.url;
-  a.download = 'promptchan_' + Date.now() + '.jpg'; a.target = '_blank'; a.click();
+  var ext = _lastResult.isVideo ? '.mp4' : '.jpg';
+  var a = document.createElement('a');
+  a.href = _lastResult.url;
+  a.download = 'promptchan_' + Date.now() + ext;
+  a.target = '_blank';
+  a.click();
+}
+
+// ── 自动保存（生成完成后静默写入 DB）────────────────────────────
+async function autoSaveWork(){
+  if(!currentUser || !_lastResult) return;
+  var btn = el('saveWorkBtn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> 自动保存中…'; }
+
+  var isVideo = _lastResult.isVideo;
+  var title   = getActiveTitle();
+  var now     = new Date().toISOString().replace('T',' ').slice(0,19);
+  var matId   = 'usr-' + (currentUser.id||'0') + '-' + Date.now();
+  var mode    = _lastResult.mode || currentMode;
+
+  try{
+    // 1. works 表
+    var workRow = {
+      title: title, type: isVideo?'video':'image', mode: mode,
+      src: _lastResult.url,
+      video_src: isVideo ? _lastResult.url : null,
+      thumb: _lastResult.url,
+      style: (el('styleSelect')&&el('styleSelect').value)||mode,
+      status: 'pending', creator: currentUser.username,
+      origin: 'user', likes: 0, created_at: now
+    };
+    var savedArr = await sPost('works', workRow);
+    var saved    = Array.isArray(savedArr) ? savedArr[0] : savedArr;
+    _savedWorkId = saved ? (saved.id || null) : null;
+    // 更新本地缓存
+    MY_WORKS.unshift(Object.assign({}, workRow, {id: _savedWorkId}));
+
+    // 2. user_materials 表
+    var matRow = {
+      id: matId, work_id: _savedWorkId, title: title,
+      src: _lastResult.url,
+      video_src: isVideo ? _lastResult.url : null,
+      thumb: _lastResult.url,
+      mode: mode, media_type: isVideo?'video':'image',
+      creator: currentUser.username, created_at: now,
+      likes: 0, starred: false, recommended: false, status: 'pending'
+    };
+    await sPost('user_materials', matRow);
+    MY_MATS.unshift(Object.assign({}, matRow));
+    _savedMatId = matId;
+
+    // 3. review_queue 表（管理端审核）
+    await sPost('review_queue', {
+      title: title, src: _lastResult.url,
+      creator: currentUser.username,
+      reason: '用户创作 - ' + mode, reports: 0,
+      priority: 'mid', submitted_at: now, work_id: _savedWorkId
+    });
+
+    // 更新 UI
+    if(btn){
+      btn.disabled = false;
+      btn.className = 'btn btn-ghost';
+      btn.innerHTML = '<i class="fa fa-check"></i> 已保存';
+    }
+    var pb = el('submitPublicBtn'); if(pb) pb.style.display='';
+    el('submitNotice').style.display = 'flex';
+    console.log('[Save] work_id:', _savedWorkId, 'mat_id:', matId, 'mode:', mode);
+  } catch(e){
+    console.error('[autoSaveWork]', e);
+    // 失败时显示手动保存按钮
+    if(btn){
+      btn.disabled = false;
+      btn.className = 'btn btn-primary';
+      btn.innerHTML = '<i class="fa fa-save"></i> 保存到素材库';
+    }
+    showToast('error', '自动保存失败: ' + e.message);
+  }
 }
 
 // ── 获取当前模式的标题输入 ────────────────────────────────────
