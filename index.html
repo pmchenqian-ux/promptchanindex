@@ -2136,15 +2136,19 @@ async function pollTask(taskId){
 function startPolling(taskId){
   return new Promise(function(resolve, reject){
     var retries = 0;
-    el('genStepLabel').textContent = '任务已提交，等待结果…';
-    el('genStepSub') && (el('genStepSub').textContent = '任务 ID: ' + taskId.slice(0,12) + '…');
+    el('genStepLabel') && (el('genStepLabel').textContent = '任务已提交，等待结果…');
+    el('genStepSub')   && (el('genStepSub').textContent   = '任务 ID: ' + taskId.slice(0,12) + '…');
     function tick(){
       if(genCancelled){ reject(new Error('cancelled')); return; }
       pollTask(taskId).then(function(d){
         if(d.status === 'completed') resolve(d);
-        else if(d.status === 'failed') reject(new Error(d.errorMessage || '任务执行失败'));
+        else if(d.status === 'failed'){
+          var errMsg = d.errorMessage || d.error_message || d.message || '任务失败';
+          console.error('[Poll failed]', errMsg, JSON.stringify(d).slice(0,200));
+          reject(new Error(errMsg));
+        }
         else { retries = 0; _pollTimer = setTimeout(tick, 4000); }
-      }).catch(function(){
+      }).catch(function(e){
         retries++;
         if(retries > 8){ reject(new Error('轮询超时，请稍后重试')); return; }
         _pollTimer = setTimeout(tick, 6000);
@@ -3082,75 +3086,96 @@ function finalizeStreamBubble(bubble, text, char){
 //  SEND CHAT — AI女友 API（同步提交+轮询，通过 Worker 代理）
 // ═══════════════════════════════════════════════════════════
 async function chatAIReply(text, charId, char, sysContent){
-  // 构造消息历史（先system，再历史，最后当前user）
   var history = chatHistory[charId] || [];
-  var msgs = [{role:'system', content:sysContent}].concat(
-    history.slice(-20).map(function(m){ return {role: m.role==='assistant'?'assistant':'user', content:m.content}; })
-  );
+
+  // 构建 messages：将 system prompt 合并到第一条 user 消息前缀（API 不支持 system role）
+  var msgs = [];
+  var histSlice = history.slice(-16);
+  // 如果有历史，把 system 内容注入到最后一条 user 前
+  for(var mi=0; mi<histSlice.length; mi++){
+    var m = histSlice[mi];
+    msgs.push({ role: m.role==='assistant'?'assistant':'user', content: m.content });
+  }
+
+  // prompt 字段是本次用户输入（含 system 前缀，便于模型了解角色）
+  var promptWithCtx = '[角色设定: '+sysContent+']\n\n用户: '+text;
+
+  var params = {
+    prompt: promptWithCtx,
+    extra: {
+      temperature: 0.9,
+      max_tokens:  600,
+      messages:    msgs.length >= 2 ? msgs : undefined  // 有历史时才传
+    }
+  };
+  // 清理 undefined
+  if(!params.extra.messages) delete params.extra.messages;
 
   var reply = '';
 
-  // 方式1：SSE 流式（直连 API_HOST，有 CORS 时会失败）
+  // 方式1：SSE 流式（直连 API_HOST）
   try{
     var sseResp = await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
       method:'POST',
       headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
       body:JSON.stringify({
-        templateId: TPLS.aigf,
-        clientUserId: 'user-'+(currentUser?currentUser.id:'anon'),
-        parameters:{ model:'aigf-rpmax-kto', prompt:text,
-          extra:{ temperature:0.9, max_tokens:600, messages:msgs } }
+        templateId:  TPLS.aigf,
+        clientUserId:'user-'+(currentUser?currentUser.id:'anon'),
+        parameters:  params
       })
     });
     if(sseResp.ok && sseResp.body){
       var reader=sseResp.body.getReader(), decoder=new TextDecoder(), buf='';
-      while(true){
+      outer: while(true){
         var _r=await reader.read(); if(_r.done) break;
         buf+=decoder.decode(_r.value,{stream:true});
         var parts=buf.split('\n'); buf=parts.pop();
         for(var pi=0;pi<parts.length;pi++){
           var ln=parts[pi].trim();
-          if(ln==='data: [DONE]') break;
+          if(ln==='data: [DONE]') break outer;
           if(ln.startsWith('data: ')){
             try{
               var obj=JSON.parse(ln.slice(6));
-              if(obj.error) throw new Error(obj.error);
               var delta=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
-              if(delta&&delta.content){ reply+=delta.content; }
-            }catch(pe){ if(pe.message&&pe.message!=='Unexpected end of JSON input') console.warn('[SSE]',pe.message); }
+              if(delta&&delta.content) reply+=delta.content;
+            }catch(pe){}
           }
         }
       }
-      if(reply) return reply;
+      if(reply){ console.log('[SSE ok]',reply.slice(0,40)); return reply; }
     }
-  } catch(e){ console.log('[SSE failed, using poll]', e.message); }
+  }catch(e){ console.log('[SSE failed]',e.message); }
 
-  // 方式2：同步提交+轮询（经 Worker 代理，确保可用）
+  // 方式2：同步提交 + 轮询（通过 Worker 代理）
   var resp = await apiFetch('/api/frwapi/v1/tasks',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      templateId: TPLS.aigf,
-      clientUserId: 'user-'+(currentUser?currentUser.id:'anon'),
-      parameters:{ model:'aigf-rpmax-kto', prompt:text,
-        extra:{ temperature:0.9, max_tokens:600, messages:msgs } }
+      templateId:  TPLS.aigf,
+      clientUserId:'user-'+(currentUser?currentUser.id:'anon'),
+      parameters:  params
     })
   });
-  if(!resp.ok) throw new Error('提交失败 '+resp.status+': '+(await resp.text()).slice(0,100));
+  if(!resp.ok){
+    var errTxt = await resp.text();
+    throw new Error('HTTP '+resp.status+': '+errTxt.slice(0,120));
+  }
   var subData = await resp.json();
-  if(!subData.success) throw new Error(subData.message||'提交失败');
+  console.log('[Chat submit]', JSON.stringify(subData).slice(0,150));
+  if(!subData.success) throw new Error(subData.message||JSON.stringify(subData).slice(0,100));
   var taskId = subData.data.taskId;
 
-  // 轮询结果
   var result = await startPolling(taskId);
-  console.log('[Chat poll result]', JSON.stringify(result).slice(0,300));
+  console.log('[Chat poll]', JSON.stringify(result).slice(0,300));
 
-  // 提取文本：metadata.transcript 是标准字段
+  // 提取回复文本（多字段兼容）
   reply = (result.metadata && result.metadata.transcript) ||
           (result.results && result.results[0] &&
-           (result.results[0].content || result.results[0].text || result.results[0].url)) ||
+           (result.results[0].content || result.results[0].text ||
+            result.results[0].message || result.results[0].url)) ||
           (result.choices && result.choices[0] &&
-           result.choices[0].message && result.choices[0].message.content) || '';
+           (result.choices[0].message&&result.choices[0].message.content ||
+            result.choices[0].text)) || '';
   return reply;
 }
 
