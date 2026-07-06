@@ -465,6 +465,7 @@ select option{background:var(--card2)}
       <option value="video">视频</option>
     </select>
     <span style="font-size:12px;color:var(--muted);margin-left:auto" id="exploreCount"></span>
+    <button onclick="loadData()" style="background:none;border:1px solid var(--border2);color:var(--muted);border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px" title="刷新探索内容"><i class="fa fa-refresh"></i> 刷新</button>
   </div>
   <div class="explore-grid" id="exploreGrid">
     <div class="empty-state" style="column-span:all"><div class="db-spinner" style="margin:0 auto"></div></div>
@@ -2257,7 +2258,7 @@ async function autoSaveWork(){
   var mode    = _lastResult.mode || currentMode;
 
   try{
-    // 1. works 表
+    // 1. works 表 — 先尝试完整字段，失败则降级为最小字段集
     var workRow = {
       title: title, type: isVideo?'video':'image', mode: mode,
       src: _lastResult.url,
@@ -2265,11 +2266,30 @@ async function autoSaveWork(){
       thumb: _lastResult.url,
       style: (el('styleSelect')&&el('styleSelect').value)||mode,
       status: 'pending', creator: currentUser.username,
-      origin: 'user', likes: 0, created_at: now
+      origin: 'user', likes: 0
     };
-    var savedArr = await sPost('works', workRow);
-    var saved    = Array.isArray(savedArr) ? savedArr[0] : savedArr;
+    var savedArr;
+    try{
+      savedArr = await sPost('works', workRow);
+    } catch(e1){
+      console.warn('[autoSave] full insert failed, trying minimal:', e1.message);
+      // 降级：只发送核心字段（避免因缺列导致整体失败）
+      savedArr = await sPost('works', {
+        title: title, type: isVideo?'video':'image', mode: mode,
+        src: _lastResult.url, status: 'pending',
+        creator: currentUser.username, origin: 'user', likes: 0
+      });
+    }
+    var saved = Array.isArray(savedArr) ? savedArr[0] : savedArr;
     _savedWorkId = saved ? (saved.id || null) : null;
+    // 若 POST 没返回 ID，查询最新插入的记录
+    if(!_savedWorkId){
+      try{
+        var latest = await sGet('works?creator=eq.'+encodeURIComponent(currentUser.username)+'&status=eq.pending&order=id.desc&limit=1');
+        if(latest && latest[0]) _savedWorkId = latest[0].id;
+      } catch(e2){ console.warn('ID lookup failed:', e2.message); }
+    }
+    console.log('[autoSave] works id:', _savedWorkId);
     // 更新本地缓存
     MY_WORKS.unshift(Object.assign({}, workRow, {id: _savedWorkId}));
 
