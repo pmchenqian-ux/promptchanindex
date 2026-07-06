@@ -1074,6 +1074,21 @@ select option{background:var(--card2)}
   </div>
 </div>
 
+<!-- VIDEO PLAYER MODAL -->
+<div class="modal" id="videoPlayerModal" onclick="if(event.target===this)closeVideoPlayer()">
+  <div style="position:relative;width:92vw;max-width:900px;background:#000;border-radius:16px;overflow:hidden;border:1px solid var(--border2)">
+    <button onclick="closeVideoPlayer()" style="position:absolute;top:12px;right:14px;z-index:10;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:22px;cursor:pointer;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center">×</button>
+    <video id="modalVideo" controls autoplay loop playsinline style="width:100%;max-height:80vh;display:block;object-fit:contain;background:#000"></video>
+    <div style="padding:14px 18px;background:var(--surface);display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div id="modalVideoTitle" style="font-size:14px;font-weight:700"></div>
+        <div id="modalVideoMeta" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <button onclick="downloadModalVideo()" class="btn btn-ghost" style="font-size:12px"><i class="fa fa-download"></i> 下载视频</button>
+    </div>
+  </div>
+</div>
+
 <!-- DETAIL MODAL --><!-- DETAIL MODAL -->
 <div class="modal" id="detailModal" onclick="if(event.target===this)closeModal('detailModal')">
   <div class="modal-inner" style="width:700px;max-width:96vw;padding:0;border-radius:16px;overflow:hidden">
@@ -1632,6 +1647,35 @@ function renderMyWorks(){
 // ══════════════════════════════════════════
 //  MATERIALS
 // ══════════════════════════════════════════
+// ── 视频播放器弹窗 ────────────────────────────────────────────
+function openVideoPlayer(src, title, creator, createdAt){
+  var modal = el('videoPlayerModal');
+  var vid   = el('modalVideo');
+  if(!modal || !vid) return;
+  vid.src = src;
+  vid.load();
+  vid.play().catch(function(){});
+  el('modalVideoTitle').textContent = title || '视频';
+  el('modalVideoMeta').textContent  = (creator?'创作者：'+creator:'') + (createdAt?' · '+String(createdAt).slice(0,10):'');
+  modal.classList.add('open');
+  document.onkeydown = function(e){ if(e.key==='Escape') closeVideoPlayer(); };
+}
+
+function closeVideoPlayer(){
+  var modal = el('videoPlayerModal');
+  var vid   = el('modalVideo');
+  if(vid){ vid.pause(); vid.src=''; }
+  if(modal) modal.classList.remove('open');
+  document.onkeydown = null;
+}
+
+function downloadModalVideo(){
+  var vid = el('modalVideo');
+  if(!vid||!vid.src) return;
+  var a = document.createElement('a');
+  a.href = vid.src; a.download='promptchan_video_'+Date.now()+'.mp4'; a.target='_blank'; a.click();
+}
+
 function setMatSrc(src){
   matSrc = src;
   ['admin','user','mine'].forEach(function(t){
@@ -1680,21 +1724,70 @@ function renderMaterials(){
       var st = m.status||'saved';
       if(st !== 'approved') statusBadge = '<span class="mat-badge" style="background:' + (statusColor[st]||'rgba(100,100,100,.85)') + ';color:#fff">' + (statusMap[st]||st) + '</span>';
     }
-    card.innerHTML =
-      '<div class="mat-img-wrap" style="position:relative">'
-      + (isVideo ? '<div style="position:absolute;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:1"><i class="fa fa-play-circle" style="font-size:32px;color:rgba(255,255,255,.7)"></i></div>' : '')
-      + '<img src="' + imgSrc + '" style="' + (isVideo?'opacity:.5':'') + '" onerror="this.src=\'https://picsum.photos/seed/m0/300/375\'">'  
-      + (m.recommended ? '<span class="mat-badge" style="background:rgba(98,75,255,.85);color:#fff">推荐</span>' : '')
-      + (m.starred ? '<span class="mat-badge" style="top:' + (m.recommended?28:6) + 'px;left:6px;background:rgba(245,158,11,.85);color:#000">★ 精选</span>' : '')
-      + statusBadge
-      + '</div>'
-      + '<div class="mat-info"><div class="mat-title">' + escHtml(m.title||'无标题') + '</div>'
-      + '<div class="mat-meta"><i class="fa fa-user-o"></i> ' + escHtml(m.creator||'—')
-      + (m.mode ? ' &nbsp;·&nbsp; <i class="fa fa-tag"></i> ' + m.mode : '') + '</div></div>';
-    card.onclick = function(){
-      openDetail({ src: m.src || m.url, video_src: m.video_src, title:m.title, creator:m.creator,
-        createdAt:m.created_at, status:m.status||'approved', style:m.mode, mode:m.mode, likes:m.likes||0 });
-    };
+    // ── 视频卡片：用 <video> 显示第一帧缩略图，可点击播放 ──
+    var videoSrc = m.video_src || (isVideo ? (m.src||m.url||'') : '');
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'mat-img-wrap';
+    imgWrap.style.cssText = 'position:relative;overflow:hidden;border-radius:8px 8px 0 0;aspect-ratio:3/4;background:#111';
+
+    if(isVideo && videoSrc){
+      // <video> 自动加载第一帧作缩略图
+      var vidEl = document.createElement('video');
+      vidEl.src = videoSrc;
+      vidEl.preload = 'metadata';
+      vidEl.muted = true;
+      vidEl.playsInline = true;
+      vidEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+      vidEl.currentTime = 0.1;
+      // 播放按钮
+      var playBtn = document.createElement('div');
+      playBtn.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none';
+      playBtn.innerHTML = '<div style="width:48px;height:48px;border-radius:50%;background:rgba(98,75,255,.88);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(98,75,255,.5);transition:transform .15s"><i class="fa fa-play" style="color:#fff;font-size:18px;margin-left:3px"></i></div>';
+      // 时长角标
+      var durTag = document.createElement('div');
+      durTag.style.cssText = 'position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;z-index:3';
+      durTag.textContent = '视频';
+      vidEl.addEventListener('loadedmetadata', function(){
+        var s = Math.round(vidEl.duration||0);
+        if(s > 0) durTag.textContent = Math.floor(s/60)+':'+ ('0'+s%60).slice(-2);
+      });
+      imgWrap.appendChild(vidEl);
+      imgWrap.appendChild(playBtn);
+      imgWrap.appendChild(durTag);
+    } else {
+      var imgEl = document.createElement('img');
+      imgEl.src = imgSrc;
+      imgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+      imgEl.onerror = function(){ this.src='https://picsum.photos/seed/mat'+i+'/300/375'; };
+      imgWrap.appendChild(imgEl);
+    }
+
+    // 推荐/精选/状态徽章
+    if(m.recommended){ var rBadge=document.createElement('span'); rBadge.className='mat-badge'; rBadge.style.background='rgba(98,75,255,.85)'; rBadge.style.color='#fff'; rBadge.textContent='推荐'; imgWrap.appendChild(rBadge); }
+    if(m.starred){ var sBadge=document.createElement('span'); sBadge.className='mat-badge'; sBadge.style.cssText='top:'+(m.recommended?28:6)+'px;left:6px;background:rgba(245,158,11,.85);color:#000'; sBadge.textContent='★ 精选'; imgWrap.appendChild(sBadge); }
+    if(statusBadge){ var stmp=document.createElement('div'); stmp.innerHTML=statusBadge; imgWrap.appendChild(stmp.firstChild); }
+
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'mat-info';
+    infoDiv.innerHTML = '<div class="mat-title">'+escHtml(m.title||'无标题')+'</div>'
+      +'<div class="mat-meta"><i class="fa fa-'+(isVideo?'film':'image')+'"></i> '
+      +escHtml(m.creator||'—')+(m.mode?' · '+escHtml(m.mode):'')+'</div>';
+
+    card.appendChild(imgWrap);
+    card.appendChild(infoDiv);
+
+    // 点击事件：视频打开播放器，图片打开详情
+    (function(vs, m2){
+      card.onclick = function(){
+        if(vs){
+          openVideoPlayer(vs, m2.title||'视频', m2.creator, m2.created_at);
+        } else {
+          openDetail({ src:m2.src||m2.url, video_src:vs, title:m2.title, creator:m2.creator,
+            createdAt:m2.created_at, status:m2.status||'approved', style:m2.mode, mode:m2.mode, likes:m2.likes||0 });
+        }
+      };
+    })(videoSrc, m);
+
     grid.appendChild(card);
   });
 }
