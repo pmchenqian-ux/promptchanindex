@@ -3101,14 +3101,14 @@ async function chatAIReply(text, charId, char, sysContent){
   var promptWithCtx = '[角色设定: '+sysContent+']\n\n用户: '+text;
 
   var params = {
+    model:  'aigf-rpmax-kto',   // API 必须字段
     prompt: promptWithCtx,
     extra: {
       temperature: 0.9,
       max_tokens:  600,
-      messages:    msgs.length >= 2 ? msgs : undefined  // 有历史时才传
+      messages:    msgs.length >= 2 ? msgs : undefined
     }
   };
-  // 清理 undefined
   if(!params.extra.messages) delete params.extra.messages;
 
   var reply = '';
