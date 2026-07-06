@@ -1472,83 +1472,144 @@ function setFilter(f, btn){
 }
 
 function isWorkVisible(w){
-  // Unpublished / deleted always hidden
-  if(w.status === 'unpublished' || w.status === 'rejected' || w.status === 'pending') return false;
-  if(w.origin === 'admin'){
-    // Private = paid-only
-    if(w.status === 'private'){
-      return currentUser && (currentUser.plan === 'pro' || currentUser.plan === 'premium');
-    }
-    return w.status === 'approved' || w.status === 'published';
-  }
-  if(w.origin === 'user'){
-    return w.status === 'approved';
-  }
+  if(w.status==='unpublished'||w.status==='rejected'||w.status==='pending') return false;
+  if(w.origin==='admin') return true; // approved+published+private 都基础可见（趋势中private带锁）
+  if(w.origin==='user')  return w.status==='approved';
   return false;
+}
+
+function isRecent(w, days){
+  var ts = w.created_at || w.createdAt || '';
+  if(!ts) return false;
+  var d = new Date(ts.replace(' ','T'));
+  return !isNaN(d) && (Date.now()-d.getTime()) < days*86400000;
 }
 
 function renderExplore(){
   var grid = el('exploreGrid'); if(!grid) return;
-  var typeF  = el('filterType') ? el('filterType').value : '';
-  var search = (el('searchInput') ? el('searchInput').value : '').trim().toLowerCase();
+  var typeF  = (el('filterType')||{}).value || '';
+  var search = ((el('searchInput')||{}).value || '').trim().toLowerCase();
+  var filter = currentFilter;
+  var visible = [];
+  var isPaidUser = currentUser && (currentUser.plan==='pro'||currentUser.plan==='premium');
 
-  var visible = ALL_WORKS.filter(function(w){
-    if(!isWorkVisible(w)) return false;
-    if(typeF && w.type !== typeF) return false;
-    if(search){
-      var hay = ((w.title||'') + ' ' + (w.style||'') + ' ' + (w.creator||'')).toLowerCase();
-      if(!hay.includes(search)) return false;
-    }
-    if(currentFilter === 'admin' && w.origin !== 'admin') return false;
-    if(currentFilter === 'user'  && w.origin !== 'user')  return false;
-    return true;
-  });
+  if(filter==='admin'){
+    // 官方精选：admin_materials 中 recommended 或 starred
+    visible = ADMIN_MATS.filter(function(m){ return m.recommended||m.starred; })
+      .map(function(m){
+        return { id:m.id, title:m.title, src:m.src, thumb:m.thumb||m.src,
+          video_src:m.video_src, creator:m.creator||'官方',
+          origin:'admin', status:'approved',
+          type:m.media_type||'image', mode:m.mode,
+          likes:m.likes||0, created_at:m.created_at,
+          starred:m.starred, recommended:m.recommended };
+      });
+    // 也纳入 works 表中管理端推荐/星标作品
+    ALL_WORKS.forEach(function(w){
+      if(w.origin==='admin'&&(w.recommended||w.starred)&&(w.status==='approved'||w.status==='published')){
+        if(!visible.some(function(v){ return v.src===w.src; })) visible.push(w);
+      }
+    });
+    visible.sort(function(a,b){
+      return ((b.starred?2:0)+(b.recommended?1:0)) - ((a.starred?2:0)+(a.recommended?1:0));
+    });
 
-  if(currentFilter === 'trend'){
-    visible.sort(function(a,b){ return (b.likes||0) - (a.likes||0); });
+  } else if(filter==='new'){
+    // 最新：近2天 approved/published 内容，按时间倒序
+    visible = ALL_WORKS.filter(function(w){
+      if(!isWorkVisible(w)||w.status==='private') return false;
+      return isRecent(w,2);
+    });
+    visible.sort(function(a,b){
+      var ta=new Date((a.created_at||a.createdAt||'').replace(' ','T')).getTime()||0;
+      var tb=new Date((b.created_at||b.createdAt||'').replace(' ','T')).getTime()||0;
+      return tb-ta;
+    });
+
+  } else if(filter==='user'){
+    // 用户创作
+    visible = ALL_WORKS.filter(function(w){ return w.origin==='user'&&w.status==='approved'; });
+    visible.sort(function(a,b){ return (b.id||0)>(a.id||0)?1:-1; });
+
   } else {
-    visible.sort(function(a,b){ return (b.id||0) > (a.id||0) ? 1 : -1; });
+    // 趋势：admin(approved+published+private) + user(approved)，按点赞排序
+    visible = ALL_WORKS.filter(function(w){
+      if(w.status==='unpublished'||w.status==='rejected'||w.status==='pending') return false;
+      if(w.origin==='admin') return true;
+      return w.origin==='user' && w.status==='approved';
+    });
+    visible.sort(function(a,b){ return (b.likes||0)-(a.likes||0); });
   }
 
-  el('exploreCount') && (el('exploreCount').textContent = visible.length + ' 件作品');
+  // 媒体类型+搜索过滤
+  if(typeF) visible=visible.filter(function(w){ return (w.type||w.media_type)===typeF; });
+  if(search) visible=visible.filter(function(w){
+    return ((w.title||'')+(w.style||'')+(w.creator||'')+(w.mode||'')).toLowerCase().includes(search);
+  });
 
+  el('exploreCount')&&(el('exploreCount').textContent=visible.length+' 件作品');
+
+  var emptyMsgs={trend:'暂无内容，去创作吧！',new:'最近2天暂无新内容',admin:'管理员尚未设置推荐内容',user:'暂无用户创作内容'};
   if(!visible.length){
-    grid.innerHTML = '<div class="empty-state" style="column-span:all"><i class="fa fa-image"></i><h3>暂无内容</h3><p>这里还没有符合条件的作品，去创作一个吧！</p></div>';
+    grid.innerHTML='<div class="empty-state" style="column-span:all"><i class="fa fa-image"></i><h3>暂无内容</h3><p>'+(emptyMsgs[filter]||'暂无')+'</p></div>';
     return;
   }
 
-  grid.innerHTML = '';
-  visible.forEach(function(w, i){
-    var isPaid = w.status === 'private';
-    var isUser = w.origin === 'user';
-    var imgSrc = w.src || w.thumb || ('https://picsum.photos/seed/' + (w.id || i) + '/400/500');
-    var card = document.createElement('div');
-    card.className = 'explore-card';
-    var h = 160 + (i % 5) * 40;
-    var inner = '<img src="' + imgSrc + '" style="height:' + h + 'px;object-fit:cover"'
-      + ' onerror="this.src=\'https://picsum.photos/seed/' + i + '/400/' + h + '\'">';
-    if(isPaid){
-      inner += '<div class="paid-lock">'
-        + '<i class="fa fa-lock"></i>'
-        + '<span>付费内容</span>'
-        + '<button onclick="event.stopPropagation();showToast(\'info\',\'升级套餐即可查看全部内容\')">升级解锁</button>'
-        + '</div>';
+  grid.innerHTML='';
+  visible.forEach(function(w,i){
+    var isPaid   = w.status==='private';
+    var canSee   = !isPaid || isPaidUser;  // 付费用户可看私密内容
+    var isUser   = w.origin==='user';
+    var videoSrc = w.video_src||(w.type==='video'||w.media_type==='video'?w.src:null);
+    var imgSrc   = w.thumb||w.src||('https://picsum.photos/seed/'+(w.id||i)+'/400/500');
+    var card=document.createElement('div');
+    card.className='explore-card';
+    var h=160+(i%5)*40;
+
+    // 媒体内容
+    var mediaHtml='';
+    if(videoSrc&&canSee){
+      mediaHtml='<video src="'+videoSrc+'" muted preload="metadata" style="height:'+h+'px;object-fit:cover;width:100%;display:block" playsinline></video>'
+        +'<div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
+        +'<div style="width:36px;height:36px;border-radius:50%;background:rgba(98,75,255,.8);display:flex;align-items:center;justify-content:center"><i class="fa fa-play" style="color:#fff;font-size:14px;margin-left:2px"></i></div></div>';
+    } else {
+      // 私密内容图片模糊化处理
+      var blurStyle = (isPaid&&!canSee) ? 'filter:blur(16px);transform:scale(1.05)' : '';
+      mediaHtml='<img src="'+imgSrc+'" style="height:'+h+'px;object-fit:cover;'+blurStyle+'" onerror="this.src=&quot;https://picsum.photos/seed/0/400/200&quot;">';
     }
-    if(isUser){
-      inner += '<span class="card-badge" style="background:rgba(34,197,94,.9);color:#000">用户创作</span>';
+
+    // 私密遮罩（未付费用户）
+    var lockHtml='';
+    if(isPaid&&!canSee){
+      lockHtml='<div class="paid-lock" style="cursor:pointer" onclick="event.stopPropagation();showPage(&apos;upgrade&apos;)">'
+        +'<i class="fa fa-lock" style="font-size:28px;margin-bottom:8px"></i>'
+        +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">私密内容</div>'
+        +'<div style="font-size:11px;opacity:.8;margin-bottom:12px;text-align:center">仅付费用户可见</div>'
+        +'<div style="background:var(--purple);color:#fff;border-radius:8px;padding:7px 18px;font-size:12px;font-weight:700">立即升级</div>'
+        +'</div>';
     }
-    if(isPaid){
-      inner += '<span class="card-badge" style="top:8px;right:8px;left:auto;background:rgba(245,158,11,.9);color:#000">'
-        + '<i class="fa fa-lock"></i> 付费</span>';
-    }
-    inner += '<div class="card-overlay">'
-      + '<div class="card-title">' + (w.title || '无标题') + '</div>'
-      + '<div class="card-meta">'
-      + '<span><i class="fa fa-user-o"></i> ' + (w.creator || '—') + '</span>'
-      + '<span><i class="fa fa-heart-o"></i> ' + (w.likes || 0) + '</span>'
-      + '</div></div>';
-    card.innerHTML = inner;
-    card.onclick = function(){ openDetail(w); };
+
+    // 徽章
+    var badges='';
+    if(isUser) badges+='<span class="card-badge" style="background:rgba(34,197,94,.9);color:#000">用户创作</span>';
+    if(w.starred) badges+='<span class="card-badge" style="top:8px;right:8px;left:auto;background:rgba(245,158,11,.9);color:#000">★ 精选</span>';
+    else if(w.recommended) badges+='<span class="card-badge" style="top:8px;right:8px;left:auto;background:rgba(98,75,255,.85);color:#fff">推荐</span>';
+    if(isPaid&&!canSee) badges+='<span class="card-badge" style="top:'+(w.starred||w.recommended?34:8)+'px;right:8px;left:auto;background:rgba(245,158,11,.9);color:#000"><i class="fa fa-lock"></i> 私密</span>';
+
+    var overlay='<div class="card-overlay">'
+      +'<div class="card-title">'+(w.title||'无标题')+'</div>'
+      +'<div class="card-meta">'
+      +'<span><i class="fa fa-user-o"></i> '+(w.creator||'—')+'</span>'
+      +'<span><i class="fa fa-heart-o"></i> '+(w.likes||0)+'</span>'
+      +(videoSrc?'<span><i class="fa fa-film"></i> 视频</span>':'')
+      +'</div></div>';
+
+    card.innerHTML=mediaHtml+lockHtml+badges+overlay;
+    card.onclick=function(){
+      if(isPaid&&!canSee){ showPage('upgrade'); return; }
+      if(videoSrc) openVideoPlayer(videoSrc,w.title,w.creator,w.created_at||w.createdAt);
+      else openDetail(w);
+    };
     grid.appendChild(card);
   });
 }
