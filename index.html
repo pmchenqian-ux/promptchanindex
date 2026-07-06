@@ -1291,16 +1291,60 @@ function onLoginSuccess(u){
   el('ddUsername').textContent      = u.username || '用户';
   el('ddEmail').textContent         = u.email    || '';
   el('ddPlan').textContent          = planLabel(u.plan);
-  el('creditsDisplay').textContent  = u.credits  || 0;
   el('profileName').textContent     = u.username || '—';
   el('profileEmailDisplay').textContent = u.email || '—';
   el('editUsername').value          = u.username || '';
   el('editEmail').value             = u.email    || '';
   el('planName').textContent        = planLabel(u.plan);
-  el('planCredits').textContent     = u.credits  || 0;
   el('profilePlanBadge').textContent = planLabel(u.plan);
+
+  // 每日积分重置（免费用户每天重置为 10 积分）
+  checkDailyCreditsReset(u).then(function(finalCredits){
+    currentUser.credits = finalCredits;
+    el('creditsDisplay').textContent = finalCredits;
+    el('planCredits').textContent    = finalCredits;
+  });
+
   showPage('explore');
   loadData();
+}
+
+// 每日积分重置逻辑
+async function checkDailyCreditsReset(u){
+  var FREE_DAILY = 10;   // 免费用户每日积分
+  var PRO_DAILY  = 9999; // Pro/Premium 不限制
+  var today = new Date().toISOString().slice(0,10);
+  var lsKey = 'pc_credits_reset_' + (u.id || u.username);
+
+  if(u.plan !== 'free'){
+    // Pro/Premium 无限积分
+    el('creditsDisplay').textContent = '∞';
+    el('planCredits').textContent    = '∞';
+    return 9999;
+  }
+
+  var lastReset = localStorage.getItem(lsKey) || '';
+  if(lastReset !== today){
+    // 今天还没重置过，重置积分
+    try{
+      await sPatch('platform_users', {id: u.id}, {credits: FREE_DAILY});
+      localStorage.setItem(lsKey, today);
+      showToast('info', '🎁 每日积分已重置，今日剩余 ' + FREE_DAILY + ' 积分');
+      return FREE_DAILY;
+    } catch(e){
+      // DB 更新失败，本地模拟重置
+      localStorage.setItem(lsKey, today);
+      return FREE_DAILY;
+    }
+  }
+
+  // 今天已重置，从 DB 取最新值
+  try{
+    var rows = await sGet('platform_users?id=eq.' + u.id + '&select=credits&limit=1');
+    return (rows && rows[0]) ? (rows[0].credits || 0) : (u.credits || 0);
+  } catch(e){
+    return u.credits || 0;
+  }
 }
 
 function doLogout(){
@@ -1989,9 +2033,6 @@ async function buildParams(mode){
 // ── Main generate entry ───────────────────────────────────────
 async function startGenerate(){
   if(!currentUser){ showToast('error','请先登录'); return; }
-  if((currentUser.credits||0) <= 0 && currentUser.plan === 'free' && currentMode !== 'upload'){
-    showToast('error','积分不足！请升级套餐'); return;
-  }
   var mode = currentMode;
 
   if(mode === 'upload'){
@@ -2085,14 +2126,7 @@ async function startGenerate(){
         if(sb){ sb.disabled=false; sb.className='btn btn-primary'; sb.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
         var pb = el('submitPublicBtn'); if(pb) pb.style.display='none';
         el('submitNotice').style.display='none';
-        // 扣除积分
-        if(currentUser.plan === 'free'){
-          var newCredits = Math.max(0, (currentUser.credits||0) - 1);
-          currentUser.credits = newCredits;
-          var cd = el('creditsDisplay'); if(cd) cd.textContent = newCredits;
-          var pc = el('planCredits');    if(pc) pc.textContent = newCredits;
-          sPatch('platform_users', {id: currentUser.id}, {credits: newCredits}).catch(function(){});
-        }
+        // 积分仅展示，不限制生成
       }, 500);
     })
     .catch(function(e){
