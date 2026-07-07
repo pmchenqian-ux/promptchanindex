@@ -1731,7 +1731,10 @@ function renderExplore(){
     var canSee   = !isPaid || isPaidUser;  // 付费用户可看私密内容
     var isUser   = w.origin==='user';
     var videoSrc = w.video_src||(w.type==='video'||w.media_type==='video'?w.src:null);
+    // 过滤 blob URL（Vercel 上无效）
+    if(videoSrc && videoSrc.startsWith('blob:')) videoSrc = null;
     var imgSrc   = w.thumb||w.src||('https://picsum.photos/seed/'+(w.id||i)+'/400/500');
+    if(imgSrc && imgSrc.startsWith('blob:')) imgSrc = 'https://picsum.photos/seed/'+(w.id||i)+'/400/500';
     var card=document.createElement('div');
     card.className='explore-card';
     var h=160+(i%5)*40;
@@ -1939,110 +1942,84 @@ async function loadMyMats(){
 
 function renderMaterials(){
   var grid = el('matGrid'); if(!grid) return;
-  var data;
-  if(matSrc === 'admin'){
-    data = ADMIN_MATS;
-  } else if(matSrc === 'mine'){
-    data = MY_MATS;  // 当前用户自己的素材（本地缓存+DB加载）
-  } else {
-    data = USER_MATS;
-  }
+  var data = matSrc==='admin' ? ADMIN_MATS : matSrc==='mine' ? MY_MATS : USER_MATS;
 
-  var emptyMsg = {admin:'管理员尚未添加素材', user:'还没有用户素材', mine:'你还没有生成过内容，快去创作吧！'};
-  if(!data.length){
-    var isEmpty = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-' + (matSrc==='mine'?'magic':'database') + '"></i><h3>' + (matSrc==='mine'?'暂无素材':'暂无素材') + '</h3><p>' + (emptyMsg[matSrc]||'暂无') + '</p>' + (matSrc==='mine'?'<button class="btn btn-primary" style="margin-top:12px" onclick="showPage(\'create\')"><i class="fa fa-magic"></i> 去创作</button>':'') + '</div>';
-    grid.innerHTML = isEmpty;
+  var emptyMsgs = {admin:'管理员尚未添加素材',user:'还没有用户素材',mine:'你还没有生成过内容，快去创作吧！'};
+  if(!data || !data.length){
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-'+(matSrc==='mine'?'magic':'database')+'"></i><h3>暂无素材</h3><p>'+(emptyMsgs[matSrc]||'暂无')+'</p>'+(matSrc==='mine'?'<button class="btn btn-primary" style="margin-top:12px" onclick="showPage(\'create\')"><i class="fa fa-magic"></i> 去创作</button>':'')+'</div>';
     return;
   }
-  grid.innerHTML = '';
+
+  var html = '';
   data.forEach(function(m, i){
-    var card = document.createElement('div');
-    card.className = 'mat-card';
-    var isVideo = m.media_type === 'video' || m.type === 'video';
-    var imgSrc = m.thumb || m.src || ('https://picsum.photos/seed/mat' + i + '/300/375');
-    var statusBadge = '';
-    if(matSrc === 'mine'){
-      var statusMap = {pending:'待审核',approved:'已公开',rejected:'已拒绝',private:'私密'};
-      var statusColor = {pending:'rgba(245,158,11,.85)',approved:'rgba(34,197,94,.85)',rejected:'rgba(239,68,68,.85)',private:'rgba(98,75,255,.85)'};
-      var st = m.status||'saved';
-      if(st !== 'approved') statusBadge = '<span class="mat-badge" style="background:' + (statusColor[st]||'rgba(100,100,100,.85)') + ';color:#fff">' + (statusMap[st]||st) + '</span>';
-    }
-    // ── 视频卡片：用 <video> 显示第一帧缩略图，可点击播放 ──
-    var videoSrc = m.video_src || (isVideo ? (m.src||m.url||'') : '');
-    var imgWrap = document.createElement('div');
-    imgWrap.className = 'mat-img-wrap';
-    imgWrap.style.cssText = 'position:relative;overflow:hidden;border-radius:8px 8px 0 0;aspect-ratio:3/4;background:#111';
+    var isVideo = m.media_type==='video' || m.type==='video';
+    // 取有效缩略图（排除 blob URL）
+    var thumb = m.thumb || m.src || m.url || '';
+    if(thumb.startsWith('blob:')) thumb = '';
+    var vidSrc = m.video_src || (isVideo ? (m.src||m.url||'') : '');
+    if(vidSrc && vidSrc.startsWith('blob:')) vidSrc = '';
+    var fallback = 'https://picsum.photos/seed/m'+i+'/300/375';
 
-    var thumbSrc = m.thumb || m.src || m.url || '';
+    // 状态徽章
+    var stBadge = '';
+    if(matSrc==='mine'){
+      var stMap={pending:'待审核',approved:'已公开',rejected:'已拒绝',private:'私密'};
+      var stClr={pending:'rgba(245,158,11,.85)',approved:'rgba(34,197,94,.85)',rejected:'rgba(239,68,68,.85)',private:'rgba(98,75,255,.85)'};
+      var st=m.status||'pending';
+      if(st!=='approved') stBadge='<span class="mat-badge" style="background:'+(stClr[st]||'rgba(120,120,120,.8)')+';color:#fff">'+escHtml(stMap[st]||st)+'</span>';
+    }
+
+    // 媒体内容 HTML
+    var mediaHtml = '';
     if(isVideo){
-      // 优先用缩略图，否则用 video 截帧
-      if(thumbSrc && !thumbSrc.startsWith('blob:') && (thumbSrc.includes('imgbb') || thumbSrc.match(/\.(jpg|jpeg|png|webp)/i))){
-        // 有图片缩略图
-        var imgThumb = document.createElement('img');
-        imgThumb.src = thumbSrc;
-        imgThumb.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
-        imgThumb.onerror = function(){ this.src='https://picsum.photos/seed/v'+i+'/300/375'; };
-        imgWrap.appendChild(imgThumb);
-      } else if(videoSrc) {
-      // <video> 自动加载第一帧作缩略图
-      var vidEl = document.createElement('video');
-      vidEl.src = videoSrc;
-      vidEl.preload = 'metadata';
-      vidEl.muted = true;
-      vidEl.playsInline = true;
-      vidEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
-      vidEl.currentTime = 0.1;
-      // 播放按钮
-      var playBtn = document.createElement('div');
-      playBtn.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none';
-      playBtn.innerHTML = '<div style="width:48px;height:48px;border-radius:50%;background:rgba(98,75,255,.88);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(98,75,255,.5);transition:transform .15s"><i class="fa fa-play" style="color:#fff;font-size:18px;margin-left:3px"></i></div>';
-      // 时长角标
-      var durTag = document.createElement('div');
-      durTag.style.cssText = 'position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;z-index:3';
-      durTag.textContent = '视频';
-      vidEl.addEventListener('loadedmetadata', function(){
-        var s = Math.round(vidEl.duration||0);
-        if(s > 0) durTag.textContent = Math.floor(s/60)+':'+ ('0'+s%60).slice(-2);
-      });
-      imgWrap.appendChild(vidEl);
-      imgWrap.appendChild(playBtn);
-      imgWrap.appendChild(durTag);
+      if(thumb){
+        mediaHtml = '<img src="'+escHtml(thumb)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.src=''+fallback+''">';
+      } else if(vidSrc){
+        mediaHtml = '<video src="'+escHtml(vidSrc)+'" muted preload="metadata" playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>';
+      } else {
+        mediaHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.2)"><i class="fa fa-film" style="font-size:40px"></i></div>';
+      }
+      // 播放覆盖层
+      mediaHtml += '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none">'
+        +'<div style="width:44px;height:44px;border-radius:50%;background:rgba(98,75,255,.85);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(98,75,255,.5)">'
+        +'<i class="fa fa-play" style="color:#fff;font-size:16px;margin-left:3px"></i></div></div>';
+      mediaHtml += '<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;z-index:3">视频</div>';
     } else {
-      var imgEl = document.createElement('img');
-      imgEl.src = imgSrc;
-      imgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
-      imgEl.onerror = function(){ this.src='https://picsum.photos/seed/mat'+i+'/300/375'; };
-      }  // end else if(videoSrc)
-      imgWrap.appendChild(imgEl);
+      var imgUrl = thumb || fallback;
+      mediaHtml = '<img src="'+escHtml(imgUrl)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.src=''+fallback+''">';
     }
 
-    // 推荐/精选/状态徽章
-    if(m.recommended){ var rBadge=document.createElement('span'); rBadge.className='mat-badge'; rBadge.style.background='rgba(98,75,255,.85)'; rBadge.style.color='#fff'; rBadge.textContent='推荐'; imgWrap.appendChild(rBadge); }
-    if(m.starred){ var sBadge=document.createElement('span'); sBadge.className='mat-badge'; sBadge.style.cssText='top:'+(m.recommended?28:6)+'px;left:6px;background:rgba(245,158,11,.85);color:#000'; sBadge.textContent='★ 精选'; imgWrap.appendChild(sBadge); }
-    if(statusBadge){ var stmp=document.createElement('div'); stmp.innerHTML=statusBadge; imgWrap.appendChild(stmp.firstChild); }
+    // 额外徽章
+    if(m.recommended) mediaHtml += '<span class="mat-badge" style="background:rgba(98,75,255,.85);color:#fff">推荐</span>';
+    if(m.starred)     mediaHtml += '<span class="mat-badge" style="top:'+(m.recommended?28:6)+'px;left:6px;background:rgba(245,158,11,.85);color:#000">★ 精选</span>';
+    if(stBadge)       mediaHtml += stBadge;
 
-    var infoDiv = document.createElement('div');
-    infoDiv.className = 'mat-info';
-    infoDiv.innerHTML = '<div class="mat-title">'+escHtml(m.title||'无标题')+'</div>'
-      +'<div class="mat-meta"><i class="fa fa-'+(isVideo?'film':'image')+'"></i> '
-      +escHtml(m.creator||'—')+(m.mode?' · '+escHtml(m.mode):'')+'</div>';
+    var dataIdx = i;
+    html += '<div class="mat-card" data-idx="'+dataIdx+'" data-vid="'+escHtml(vidSrc)+'" data-src="'+escHtml(thumb||m.src||'')+'">'
+      +'<div class="mat-img-wrap" style="position:relative;overflow:hidden;border-radius:8px 8px 0 0;min-height:180px;background:#111">'+mediaHtml+'</div>'
+      +'<div class="mat-info"><div class="mat-title">'+escHtml(m.title||'无标题')+'</div>'
+      +'<div class="mat-meta"><i class="fa fa-'+(isVideo?'film':'image')+'"></i> '+escHtml(m.creator||'—')+(m.mode?' · '+escHtml(m.mode):'')+'</div></div>'
+      +'</div>';
+  });
 
-    card.appendChild(imgWrap);
-    card.appendChild(infoDiv);
+  grid.innerHTML = html;
 
-    // 点击事件：视频打开播放器，图片打开详情
-    (function(vs, m2){
-      card.onclick = function(){
-        if(vs){
-          openVideoPlayer(vs, m2.title||'视频', m2.creator, m2.created_at);
-        } else {
-          openDetail({ src:m2.src||m2.url, video_src:vs, title:m2.title, creator:m2.creator,
-            createdAt:m2.created_at, status:m2.status||'approved', style:m2.mode, mode:m2.mode, likes:m2.likes||0 });
-        }
-      };
-    })(videoSrc, m);
-
-    grid.appendChild(card);
+  // 绑定点击事件
+  grid.querySelectorAll('.mat-card').forEach(function(card, i){
+    var m = data[i];
+    if(!m) return;
+    var isVid = m.media_type==='video'||m.type==='video';
+    var vs = m.video_src||(isVid?(m.src||m.url||''):'');
+    if(vs&&vs.startsWith('blob:')) vs='';
+    card.onclick = function(){
+      if(isVid && vs){
+        openVideoPlayer(vs, m.title||'视频', m.creator, m.created_at||m.createdAt);
+      } else {
+        openDetail({ src:m.src||m.url||m.thumb, video_src:vs,
+          title:m.title, creator:m.creator, createdAt:m.created_at||m.createdAt,
+          status:m.status||'approved', style:m.mode, mode:m.mode, likes:m.likes||0 });
+      }
+    };
   });
 }
 
@@ -2599,7 +2576,10 @@ async function startGenerate(){
         el('genStepLabel').textContent = '生成视频封面…';
         thumbUrl2 = await captureVideoThumb(upFile).catch(function(){ return null; });
         finishProgressAnim();
-        _lastResult = { url: videoUrl, thumbUrl: thumbUrl2||videoUrl, mode: mode, isVideo: true, isLocalBlob: !videoUrl.startsWith('http') };
+        _lastResult = { url: videoUrl, thumbUrl: thumbUrl2||null, mode: mode, isVideo: true, isLocalBlob: !videoUrl.startsWith('http') };
+        if(_lastResult.isLocalBlob){
+          showToast('info','⚠️ 请先在 Supabase 创建 user-uploads 存储桶，视频才能永久保存');
+        }
         setTimeout(function(){
           el('genProgressWrap').style.display   = 'none';
           el('resultVideoWrap').style.display   = 'block';
