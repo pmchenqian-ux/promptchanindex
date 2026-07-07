@@ -1973,7 +1973,17 @@ function renderMaterials(){
     imgWrap.className = 'mat-img-wrap';
     imgWrap.style.cssText = 'position:relative;overflow:hidden;border-radius:8px 8px 0 0;aspect-ratio:3/4;background:#111';
 
-    if(isVideo && videoSrc){
+    var thumbSrc = m.thumb || m.src || m.url || '';
+    if(isVideo){
+      // 优先用缩略图，否则用 video 截帧
+      if(thumbSrc && !thumbSrc.startsWith('blob:') && (thumbSrc.includes('imgbb') || thumbSrc.match(/\.(jpg|jpeg|png|webp)/i))){
+        // 有图片缩略图
+        var imgThumb = document.createElement('img');
+        imgThumb.src = thumbSrc;
+        imgThumb.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+        imgThumb.onerror = function(){ this.src='https://picsum.photos/seed/v'+i+'/300/375'; };
+        imgWrap.appendChild(imgThumb);
+      } else if(videoSrc) {
       // <video> 自动加载第一帧作缩略图
       var vidEl = document.createElement('video');
       vidEl.src = videoSrc;
@@ -2002,6 +2012,7 @@ function renderMaterials(){
       imgEl.src = imgSrc;
       imgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
       imgEl.onerror = function(){ this.src='https://picsum.photos/seed/mat'+i+'/300/375'; };
+      }  // end else if(videoSrc)
       imgWrap.appendChild(imgEl);
     }
 
@@ -2572,20 +2583,33 @@ async function startGenerate(){
     try{
       var upUrl;
       if(isVidFile){
-        // 视频：用 Blob URL 本地展示，同时上传缩略图到 ImgBB
-        upUrl = URL.createObjectURL(upFile);
-        // 尝试用 ImgBB 上传视频封面（截第一帧）
-        var thumbUrl = await captureVideoThumb(upFile).catch(function(){ return upUrl; });
+        // 视频：上传到 Supabase Storage 获得永久 URL
+        el('genStepLabel').textContent = '上传视频到存储服务…';
+        el('genStepSub') && (el('genStepSub').textContent = '视频较大时需要等待，请耐心等待…');
+        var videoUrl, thumbUrl2;
+        try{
+          videoUrl = await uploadVideoToStorage(upFile);
+        } catch(storageErr){
+          console.warn('[Storage]', storageErr.message);
+          // 存储桶不存在或上传失败，回退到 Blob URL（仅本次会话有效）
+          videoUrl = URL.createObjectURL(upFile);
+          showToast('info','⚠️ 视频存储桶未配置，视频仅在当前会话可用。请在 Supabase Storage 创建 user-uploads 公开桶。');
+        }
+        // 截取视频缩略图上传到 ImgBB
+        el('genStepLabel').textContent = '生成视频封面…';
+        thumbUrl2 = await captureVideoThumb(upFile).catch(function(){ return null; });
         finishProgressAnim();
-        _lastResult = { url: upUrl, thumbUrl: thumbUrl, mode: mode, isVideo: true, isLocalBlob: true };
+        _lastResult = { url: videoUrl, thumbUrl: thumbUrl2||videoUrl, mode: mode, isVideo: true, isLocalBlob: !videoUrl.startsWith('http') };
         setTimeout(function(){
           el('genProgressWrap').style.display   = 'none';
           el('resultVideoWrap').style.display   = 'block';
           el('resultVideoPlayOverlay').style.display = 'none';
           var vid = el('resultVideo');
-          vid.src = upUrl;
+          vid.src = videoUrl;
           vid.load();
-          vid.play().catch(function(){});
+          vid.play().catch(function(){
+            var ov=el('resultVideoPlayOverlay'); if(ov) ov.style.display='flex';
+          });
           var bgmBtn = el('bgmToggleBtn'); if(bgmBtn) bgmBtn.style.display='block';
           el('resultActions').style.display = 'flex';
           var sb=el('saveWorkBtn'); if(sb){ sb.disabled=false; sb.className='btn btn-primary'; sb.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
@@ -2766,6 +2790,28 @@ function addUpTag(chip, tag){
 }
 
 // 视频截第一帧作缩略图
+// ── 上传视频到 Supabase Storage ─────────────────────────────
+async function uploadVideoToStorage(file){
+  var ext  = file.name.split('.').pop().toLowerCase() || 'mp4';
+  var name = 'videos/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
+  var resp = await fetch(SUPA_URL + '/storage/v1/object/user-uploads/' + name, {
+    method: 'POST',
+    headers: {
+      'apikey':        SUPA_KEY,
+      'Authorization': 'Bearer ' + SUPA_KEY,
+      'Content-Type':  file.type || 'video/mp4',
+      'x-upsert':      'true'
+    },
+    body: file
+  });
+  if(!resp.ok){
+    var t = await resp.text();
+    throw new Error('视频存储失败 ' + resp.status + ': ' + t.slice(0,100));
+  }
+  // 返回公开 URL
+  return SUPA_URL + '/storage/v1/object/public/user-uploads/' + name;
+}
+
 function captureVideoThumb(file){
   return new Promise(function(resolve, reject){
     var vid = document.createElement('video');
@@ -2819,9 +2865,9 @@ async function autoSaveWork(){
     // 1. works 表 — 先尝试完整字段，失败则降级为最小字段集
     var workRow = {
       title: title, type: isVideo?'video':'image', mode: mode,
-      src: _lastResult.url,
+      src:       _lastResult.thumbUrl || _lastResult.url,
       video_src: isVideo ? _lastResult.url : null,
-      thumb: _lastResult.url,
+      thumb:     _lastResult.thumbUrl || _lastResult.url,
       style: (el('styleSelect')&&el('styleSelect').value)||mode,
       status: 'pending', creator: currentUser.username,
       origin: 'user', likes: 0
@@ -2949,8 +2995,8 @@ async function saveUserWork(){
       id:         matId,
       work_id:    _savedWorkId,
       title:      title,
-      src:        _lastResult.isLocalBlob ? (_lastResult.thumbUrl||_lastResult.url) : _lastResult.url,
-      video_src:  isVideo && !_lastResult.isLocalBlob ? _lastResult.url : null,
+      src:        _lastResult.thumbUrl || _lastResult.url,
+      video_src:  isVideo ? _lastResult.url : null,
       thumb:      _lastResult.thumbUrl || _lastResult.url,
       mode:       mode,
       media_type: isVideo ? 'video' : 'image',
