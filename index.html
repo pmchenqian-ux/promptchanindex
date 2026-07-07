@@ -410,6 +410,17 @@ button{font-family:inherit;cursor:pointer}
 .undress-style-btn.active{background:rgba(239,68,68,.1);border-color:#f87171;color:#f87171}
 .vid-result-badge{position:absolute;top:10px;left:10px;background:rgba(6,182,212,.85);color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;display:flex;align-items:center;gap:5px}
 
+/* VIDEO BGM */
+.bgm-panel{padding:10px 14px;background:rgba(0,0,0,.4);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bgm-select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:8px;padding:5px 10px;font-size:12px;flex:1;min-width:140px;cursor:pointer;outline:none}
+.bgm-select option{background:#1a1332;color:#fff}
+.bgm-vol{width:80px;accent-color:var(--purple);cursor:pointer}
+.bgm-toggle{background:rgba(98,75,255,.2);border:1px solid rgba(98,75,255,.4);color:var(--purple-lt);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .18s}
+.bgm-toggle.on{background:rgba(98,75,255,.5);border-color:var(--purple);color:#fff}
+.bgm-indicator{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:bgmPulse 1s infinite;display:none}
+.bgm-indicator.show{display:inline-block}
+@keyframes bgmPulse{0%,100%{opacity:1}50%{opacity:.3}}
+
 /* DB LOADING */
 #dbLoadingOverlay{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
 .db-spinner{width:36px;height:36px;border:3px solid var(--border2);border-top-color:var(--purple);border-radius:50%;animation:spin .8s linear infinite}
@@ -803,7 +814,8 @@ select option{background:var(--card2)}
             </div>
           </div>
           <!-- 背景音乐开关按钮 -->
-          <button onclick="toggleBGMBar()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;display:none" id="bgmToggleBtn">
+          <button onclick="toggleBGMBar()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;display:none;align-items:center;gap:5px" id="bgmToggleBtn">
+            <span class="bgm-indicator" id="bgmIndicator"></span>
             <i class="fa fa-music"></i> 背景音乐
           </button>
           <audio id="bgmAudio" loop style="display:none"></audio>
@@ -2084,6 +2096,97 @@ function previewUpload(previewId, input){
   reader.readAsDataURL(file);
 }
 
+// ══════════════════════════════════════════
+//  背景音乐 BGM 系统
+// ══════════════════════════════════════════
+var _bgmPlaying = false;
+
+function getBgmAudio(){ return el('bgmAudio'); }
+
+function toggleBGMBar(){
+  var bar = el('videoBgmBar');
+  if(!bar) return;
+  var isOpen = bar.style.display === 'flex';
+  bar.style.display = isOpen ? 'none' : 'flex';
+  if(!isOpen && !_bgmPlaying){
+    // 打开时若有选曲且视频在播放，自动开始
+    var vid = el('resultVideo');
+    if(vid && !vid.paused) startBGM();
+  }
+}
+
+function changeBGM(){
+  var sel = el('bgmSelect');
+  var audio = getBgmAudio();
+  if(!sel || !audio) return;
+  var url = sel.value;
+  if(!url){
+    stopBGM();
+    return;
+  }
+  var vid = el('resultVideo');
+  audio.src = url;
+  audio.load();
+  // 只在视频播放时才开始
+  if(vid && !vid.paused){
+    audio.play().catch(function(e){ console.warn('[BGM]', e.message); });
+    _bgmPlaying = true;
+    showBgmIndicator(true);
+  }
+}
+
+function startBGM(){
+  var audio = getBgmAudio();
+  var sel   = el('bgmSelect');
+  if(!audio || !sel || !sel.value) return;
+  if(!audio.src || audio.src !== sel.value){
+    audio.src = sel.value;
+    audio.load();
+  }
+  audio.play().then(function(){
+    _bgmPlaying = true;
+    showBgmIndicator(true);
+  }).catch(function(e){ console.warn('[BGM play]', e.message); });
+}
+
+function stopBGM(){
+  var audio = getBgmAudio();
+  if(audio){ audio.pause(); }
+  _bgmPlaying = false;
+  showBgmIndicator(false);
+}
+
+function syncBGM(videoIsPlaying){
+  if(videoIsPlaying){
+    var sel = el('bgmSelect');
+    if(sel && sel.value) startBGM();
+  } else {
+    stopBGM();
+  }
+}
+
+function setBGMVolume(val){
+  var audio = getBgmAudio();
+  if(audio) audio.volume = val/100;
+}
+
+function showBgmIndicator(on){
+  var ind = el('bgmIndicator');
+  if(ind){ ind.style.display = on ? 'inline-block' : 'none'; }
+}
+
+// 同步到弹窗视频播放器
+function openVideoPlayerWithBGM(src, title, creator, createdAt){
+  openVideoPlayer(src, title, creator, createdAt);
+  var modalVid = el('modalVideo');
+  if(modalVid && !modalVid._bgmBound){
+    modalVid._bgmBound = true;
+    modalVid.addEventListener('play',  function(){ var a=getBgmAudio(); if(a&&el('bgmSelect')&&el('bgmSelect').value) startBGM(); });
+    modalVid.addEventListener('pause', function(){ stopBGM(); });
+    modalVid.addEventListener('ended', function(){ stopBGM(); });
+  }
+}
+
 function resetResult(){
   el('resultPlaceholder').style.display = 'flex';
   el('genProgressWrap').style.display   = 'none';
@@ -2096,6 +2199,10 @@ function resetResult(){
   if(vid){ vid.pause(); vid.src = ''; }
   var ov = el('resultVideoPlayOverlay');
   if(ov) ov.style.display = 'none';
+  // 停止背景音乐
+  stopBGM();
+  var bgmBtn = el('bgmToggleBtn'); if(bgmBtn) bgmBtn.style.display='none';
+  var bgmBar = el('videoBgmBar');  if(bgmBar) bgmBar.style.display='none';
   _lastResult  = null;
   _savedWorkId = null;
   _savedMatId  = null;
@@ -2432,12 +2539,25 @@ async function startGenerate(){
           }catch(e){}
           vid.src = url;
           vid.load();
+
+          // 绑定 BGM 同步事件（只绑一次）
+          if(!vid._bgmBound){
+            vid._bgmBound = true;
+            vid.addEventListener('play',   function(){ syncBGM(true);  });
+            vid.addEventListener('pause',  function(){ syncBGM(false); });
+            vid.addEventListener('ended',  function(){ syncBGM(false); });
+            vid.addEventListener('seeking', function(){ /* BGM 连续播放，不seek */ });
+          }
+
+          // 显示 BGM 控制条和开关按钮
+          var bgmBtn = el('bgmToggleBtn');
+          if(bgmBtn) bgmBtn.style.display = 'block';
+
           // 尝试带音频播放
           vid.play().then(function(){
             var overlay = el('resultVideoPlayOverlay');
             if(overlay) overlay.style.display='none';
           }).catch(function(){
-            // autoplay 被阻止，显示点击播放按钮
             var overlay = el('resultVideoPlayOverlay');
             if(overlay) overlay.style.display='flex';
           });
