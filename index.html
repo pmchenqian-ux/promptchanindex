@@ -774,8 +774,39 @@ select option{background:var(--card2)}
         </div>
         <img id="resultImg" style="display:none;max-width:90%;max-height:480px;border-radius:10px;object-fit:contain">
         <div id="resultVideoWrap" style="display:none;width:100%;position:relative;border-radius:12px;overflow:hidden;background:#000;align-self:stretch">
-          <video id="resultVideo" controls autoplay loop style="width:100%;max-height:70vh;display:block"></video>
+          <video id="resultVideo" controls loop playsinline preload="auto"
+            style="width:100%;max-height:70vh;display:block;outline:none"
+            onvolumechange="try{localStorage.setItem('vid_vol',this.volume+','+this.muted)}catch(e){}"></video>
+          <div id="resultVideoPlayOverlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.35);align-items:center;justify-content:center;cursor:pointer;z-index:5" onclick="el('resultVideo').play();this.style.display='none'">
+            <div style="width:72px;height:72px;border-radius:50%;background:rgba(98,75,255,.9);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 32px rgba(98,75,255,.5)">
+              <i class="fa fa-play" style="color:#fff;font-size:28px;margin-left:4px"></i>
+            </div>
+          </div>
           <div class="vid-result-badge"><i class="fa fa-film"></i> 视频</div>
+          <!-- 背景音乐控制栏 -->
+          <div id="videoBgmBar" style="position:absolute;bottom:48px;left:0;right:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);padding:8px 14px;display:none;align-items:center;gap:10px">
+            <i class="fa fa-music" style="color:var(--purple-lt);flex-shrink:0"></i>
+            <select id="bgmSelect" style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#fff;padding:4px 8px;font-size:12px;outline:none" onchange="changeBGM()">
+              <option value="">— 无背景音乐 —</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-ukulele.mp3">🌟 轻快 Ukulele</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-sunny.mp3">☀️ 阳光轻音乐</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-romantic.mp3">💖 浪漫钢琴</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-epic.mp3">⚡ 史诗气势</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-dreams.mp3">✨ 梦幻氛围</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-jazz.mp3">🎷 爵士 Jazz</option>
+              <option value="https://www.bensound.com/bensound-music/bensound-anewbeginning.mp3">🌸 治愈系</option>
+            </select>
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <i class="fa fa-volume-down" style="color:var(--muted);font-size:11px"></i>
+              <input type="range" id="bgmVolume" min="0" max="100" value="40" style="width:70px;accent-color:var(--purple)" oninput="setBGMVolume(this.value)">
+              <i class="fa fa-volume-up" style="color:var(--muted);font-size:11px"></i>
+            </div>
+          </div>
+          <!-- 背景音乐开关按钮 -->
+          <button onclick="toggleBGMBar()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;display:none" id="bgmToggleBtn">
+            <i class="fa fa-music"></i> 背景音乐
+          </button>
+          <audio id="bgmAudio" loop style="display:none"></audio>
         </div>
       </div>
       <div id="resultActions" class="result-actions">
@@ -1182,7 +1213,9 @@ select option{background:var(--card2)}
 <div class="modal" id="videoPlayerModal" onclick="if(event.target===this)closeVideoPlayer()">
   <div style="position:relative;width:92vw;max-width:900px;background:#000;border-radius:16px;overflow:hidden;border:1px solid var(--border2)">
     <button onclick="closeVideoPlayer()" style="position:absolute;top:12px;right:14px;z-index:10;background:rgba(0,0,0,.6);border:none;color:#fff;font-size:22px;cursor:pointer;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center">×</button>
-    <video id="modalVideo" controls autoplay loop playsinline style="width:100%;max-height:80vh;display:block;object-fit:contain;background:#000"></video>
+    <video id="modalVideo" controls loop playsinline preload="auto"
+      style="width:100%;max-height:80vh;display:block;object-fit:contain;background:#000"
+      onvolumechange="try{localStorage.setItem('vid_vol',this.volume+','+this.muted)}catch(e){}"></video>
     <div style="padding:14px 18px;background:var(--surface);display:flex;align-items:center;justify-content:space-between">
       <div>
         <div id="modalVideoTitle" style="font-size:14px;font-weight:700"></div>
@@ -1819,12 +1852,23 @@ function openVideoPlayer(src, title, creator, createdAt){
   var modal = el('videoPlayerModal');
   var vid   = el('modalVideo');
   if(!modal || !vid) return;
+  // 恢复音量
+  try{
+    var vs = (localStorage.getItem('vid_vol')||'1,false').split(',');
+    vid.volume = parseFloat(vs[0])||1;
+    vid.muted  = vs[1]==='true';
+  }catch(e){}
   vid.src = src;
   vid.load();
-  vid.play().catch(function(){});
   el('modalVideoTitle').textContent = title || '视频';
-  el('modalVideoMeta').textContent  = (creator?'创作者：'+creator:'') + (createdAt?' · '+String(createdAt).slice(0,10):'');
+  el('modalVideoMeta').textContent  = (creator?'创作者：'+creator:'')+(createdAt?' · '+String(createdAt).slice(0,10):'');
   modal.classList.add('open');
+  // 显示后播放（确保 DOM 已渲染）
+  setTimeout(function(){
+    vid.play().catch(function(e){
+      console.warn('Video autoplay blocked:', e.message);
+    });
+  }, 100);
   document.onkeydown = function(e){ if(e.key==='Escape') closeVideoPlayer(); };
 }
 
@@ -2050,6 +2094,8 @@ function resetResult(){
   if(vw){ vw.style.display = 'none'; }
   var vid = el('resultVideo');
   if(vid){ vid.pause(); vid.src = ''; }
+  var ov = el('resultVideoPlayOverlay');
+  if(ov) ov.style.display = 'none';
   _lastResult  = null;
   _savedWorkId = null;
   _savedMatId  = null;
@@ -2377,9 +2423,24 @@ async function startGenerate(){
         if(isVideo){
           el('resultImg').style.display = 'none';
           el('resultVideoWrap').style.display = 'block';
-          el('resultVideo').src = url;
-          el('resultVideo').load();
-          el('resultVideo').play().catch(function(){});
+          var vid = el('resultVideo');
+          // 恢复上次音量设置
+          try{
+            var vs = (localStorage.getItem('vid_vol')||'1,false').split(',');
+            vid.volume = parseFloat(vs[0])||1;
+            vid.muted  = vs[1]==='true';
+          }catch(e){}
+          vid.src = url;
+          vid.load();
+          // 尝试带音频播放
+          vid.play().then(function(){
+            var overlay = el('resultVideoPlayOverlay');
+            if(overlay) overlay.style.display='none';
+          }).catch(function(){
+            // autoplay 被阻止，显示点击播放按钮
+            var overlay = el('resultVideoPlayOverlay');
+            if(overlay) overlay.style.display='flex';
+          });
         } else {
           el('resultVideoWrap').style.display = 'none';
           el('resultImg').src = url;
@@ -3085,98 +3146,93 @@ function finalizeStreamBubble(bubble, text, char){
 // ═══════════════════════════════════════════════════════════
 //  SEND CHAT — AI女友 API（同步提交+轮询，通过 Worker 代理）
 // ═══════════════════════════════════════════════════════════
-async function chatAIReply(text, charId, char, sysContent){
-  var history = chatHistory[charId] || [];
-
-  // 构建 messages：将 system prompt 合并到第一条 user 消息前缀（API 不支持 system role）
-  var msgs = [];
-  var histSlice = history.slice(-16);
-  // 如果有历史，把 system 内容注入到最后一条 user 前
-  for(var mi=0; mi<histSlice.length; mi++){
-    var m = histSlice[mi];
-    msgs.push({ role: m.role==='assistant'?'assistant':'user', content: m.content });
-  }
-
-  // prompt 字段是本次用户输入（含 system 前缀，便于模型了解角色）
-  var promptWithCtx = '[角色设定: '+sysContent+']\n\n用户: '+text;
-
+async function chatAIReply(text, charId, char, sysContent, bubbleEl){
+  var history = (chatHistory[charId] || []).slice(-8);
+  var msgs = history.map(function(m){
+    return {role: m.role==='assistant'?'assistant':'user', content: m.content};
+  });
+  var promptWithCtx = '['+sysContent+'] 用户说：'+text;
   var params = {
-    model:  'aigf-rpmax-kto',   // API 必须字段
+    model: 'aigf-rpmax-kto',
     prompt: promptWithCtx,
-    extra: {
-      temperature: 0.9,
-      max_tokens:  600,
-      messages:    msgs.length >= 2 ? msgs : undefined
-    }
+    extra: { temperature:0.85, max_tokens:300, messages: msgs.length>=2 ? msgs : undefined }
   };
   if(!params.extra.messages) delete params.extra.messages;
 
-  var reply = '';
+  var MAX_RETRIES = 3;
+  for(var attempt=1; attempt<=MAX_RETRIES; attempt++){
+    if(attempt>1){
+      if(bubbleEl) updateStreamBubble(bubbleEl, '⏳ 重试中 ('+attempt+'/'+MAX_RETRIES+')…');
+      await new Promise(function(res){ setTimeout(res,2000); });
+    }
+    var reply = '';
 
-  // 方式1：SSE 流式（直连 API_HOST）
-  try{
-    var sseResp = await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
-      method:'POST',
-      headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        templateId:  TPLS.aigf,
-        clientUserId:'user-'+(currentUser?currentUser.id:'anon'),
-        parameters:  params
-      })
-    });
-    if(sseResp.ok && sseResp.body){
-      var reader=sseResp.body.getReader(), decoder=new TextDecoder(), buf='';
-      outer: while(true){
-        var _r=await reader.read(); if(_r.done) break;
-        buf+=decoder.decode(_r.value,{stream:true});
-        var parts=buf.split('\n'); buf=parts.pop();
-        for(var pi=0;pi<parts.length;pi++){
-          var ln=parts[pi].trim();
-          if(ln==='data: [DONE]') break outer;
-          if(ln.startsWith('data: ')){
-            try{
-              var obj=JSON.parse(ln.slice(6));
-              var delta=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
-              if(delta&&delta.content) reply+=delta.content;
-            }catch(pe){}
+    // 方式1：SSE 流式（直连API，有打字机效果）
+    try{
+      var ctrl = new AbortController();
+      var st = setTimeout(function(){ ctrl.abort(); }, 20000);
+      var sr = await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
+        method:'POST', signal:ctrl.signal,
+        headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({templateId:TPLS.aigf,clientUserId:'user-'+(currentUser?currentUser.id:'anon'),parameters:params})
+      });
+      clearTimeout(st);
+      if(sr.ok && sr.body){
+        var reader=sr.body.getReader(), decoder=new TextDecoder(), buf='';
+        outer: while(true){
+          var _r=await reader.read(); if(_r.done) break;
+          buf+=decoder.decode(_r.value,{stream:true});
+          var parts=buf.split('\n'); buf=parts.pop();
+          for(var pi=0;pi<parts.length;pi++){
+            var ln=parts[pi].trim();
+            if(ln==='data: [DONE]') break outer;
+            if(ln.startsWith('data: ')){
+              try{
+                var obj=JSON.parse(ln.slice(6));
+                var delta=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
+                if(delta&&delta.content){ reply+=delta.content; if(bubbleEl) updateStreamBubble(bubbleEl,reply); }
+              }catch(pe){}
+            }
           }
         }
+        if(reply){ console.log('[SSE ok #'+attempt+']',reply.slice(0,40)); return reply; }
       }
-      if(reply){ console.log('[SSE ok]',reply.slice(0,40)); return reply; }
+    }catch(e){ console.log('[SSE #'+attempt+' failed]',e.message||e.name); }
+
+    // 方式2：同步提交 + 轮询
+    try{
+      var resp = await apiFetch('/api/frwapi/v1/tasks',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({templateId:TPLS.aigf,clientUserId:'user-'+(currentUser?currentUser.id:'anon'),parameters:params})
+      });
+      if(!resp.ok) throw {message:'HTTP '+resp.status, retryable:true};
+      var sub = await resp.json();
+      if(!sub.success) throw {message:sub.message||'提交失败', retryable:true};
+      var taskId = sub.data.taskId;
+      if(bubbleEl) updateStreamBubble(bubbleEl,'⏳ AI 思考中…');
+      var result = await new Promise(function(resolve,reject){
+        var tries=0;
+        var tick=function(){
+          pollTask(taskId).then(function(d){
+            if(d.status==='completed') resolve(d);
+            else if(d.status==='failed') reject({message:d.errorMessage||'任务失败',retryable:!!d.retryable||(d.errorCode==='upstream_retryable')});
+            else if(++tries>=18) reject({message:'超时',retryable:true});
+            else setTimeout(tick,3500);
+          }).catch(function(){ if(++tries>=18) reject({message:'网络超时',retryable:true}); else setTimeout(tick,4000); });
+        };
+        tick();
+      });
+      reply=(result.metadata&&result.metadata.transcript)||
+            (result.results&&result.results[0]&&(result.results[0].content||result.results[0].text))||
+            (result.choices&&result.choices[0]&&result.choices[0].message&&result.choices[0].message.content)||'';
+      if(reply){ console.log('[Poll ok #'+attempt+']',reply.slice(0,40)); return reply; }
+    }catch(err){
+      var e2=typeof err==='object'?err:{message:String(err),retryable:false};
+      console.warn('[#'+attempt+' failed]',e2.message,'retryable:',e2.retryable);
+      if(!e2.retryable||attempt>=MAX_RETRIES) throw new Error(e2.message);
     }
-  }catch(e){ console.log('[SSE failed]',e.message); }
-
-  // 方式2：同步提交 + 轮询（通过 Worker 代理）
-  var resp = await apiFetch('/api/frwapi/v1/tasks',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      templateId:  TPLS.aigf,
-      clientUserId:'user-'+(currentUser?currentUser.id:'anon'),
-      parameters:  params
-    })
-  });
-  if(!resp.ok){
-    var errTxt = await resp.text();
-    throw new Error('HTTP '+resp.status+': '+errTxt.slice(0,120));
   }
-  var subData = await resp.json();
-  console.log('[Chat submit]', JSON.stringify(subData).slice(0,150));
-  if(!subData.success) throw new Error(subData.message||JSON.stringify(subData).slice(0,100));
-  var taskId = subData.data.taskId;
-
-  var result = await startPolling(taskId);
-  console.log('[Chat poll]', JSON.stringify(result).slice(0,300));
-
-  // 提取回复文本（多字段兼容）
-  reply = (result.metadata && result.metadata.transcript) ||
-          (result.results && result.results[0] &&
-           (result.results[0].content || result.results[0].text ||
-            result.results[0].message || result.results[0].url)) ||
-          (result.choices && result.choices[0] &&
-           (result.choices[0].message&&result.choices[0].message.content ||
-            result.choices[0].text)) || '';
-  return reply;
+  throw new Error('服务繁忙，请稍后再试');
 }
 
 async function sendChat(){
@@ -3206,7 +3262,7 @@ async function sendChat(){
 
   var fullReply='';
   try{
-    fullReply = await chatAIReply(text, activeChatChar, char, sysContent);
+    fullReply = await chatAIReply(text, activeChatChar, char, sysContent, bubbleEl);
   }catch(e){
     console.error('[sendChat]', e);
     fullReply='⚠️ 服务暂时不可用（'+e.message.slice(0,40)+'），请稍后重试。';
