@@ -14,6 +14,8 @@
   --yellow:#f59e0b; --cyan:#06b6d4; --pink:#ec4899;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+*:focus{outline:none}
+*:focus-visible{outline:2px solid rgba(98,75,255,.6);outline-offset:2px}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-track{background:var(--bg)}
@@ -35,8 +37,9 @@ button{font-family:inherit;cursor:pointer}
 .auth-field input{width:100%;background:var(--card2);border:1px solid var(--border2);border-radius:9px;padding:10px 14px;font-size:13px;color:var(--text);outline:none;transition:border-color .18s}
 .auth-field input:focus{border-color:var(--purple)}
 .auth-field input::placeholder{color:var(--muted)}
-.auth-btn{width:100%;background:var(--purple);border:none;color:#fff;border-radius:9px;padding:12px;font-size:14px;font-weight:700;margin-top:8px;transition:background .18s}
+.auth-btn{width:100%;background:var(--purple);border:none;color:#fff;border-radius:9px;padding:12px;font-size:14px;font-weight:700;margin-top:8px;transition:background .18s;outline:none;cursor:pointer}
 .auth-btn:hover{background:var(--purple-lt)}
+.auth-btn:focus{outline:none;box-shadow:0 0 0 3px rgba(98,75,255,.35)}
 .auth-err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:9px 12px;font-size:12px;color:#f87171;margin-bottom:12px;display:none}
 .auth-success{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:9px 12px;font-size:12px;color:#4ade80;margin-bottom:12px;display:none}
 .auth-divider{text-align:center;color:var(--muted);font-size:12px;margin:14px 0}
