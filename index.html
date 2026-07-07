@@ -645,21 +645,42 @@ select option{background:var(--card2)}
       <div id="panel-upload" style="display:none">
         <div class="cs-section">
           <span class="cs-label"><i class="fa fa-cloud-upload"></i> 上传作品</span>
-          <div class="upload-zone" onclick="document.getElementById('up-file').click()">
-            <input type="file" id="up-file" accept="image/*,video/*" style="display:none" onchange="previewUpload('up-preview',this)">
-            <i class="fa fa-cloud-upload"></i>
-            <p>点击上传图片或视频</p>
-            <p style="font-size:10px;margin-top:4px">支持 JPG/PNG/MP4，最大 20MB</p>
+          <div class="upload-zone" id="upDropZone" onclick="el('up-file').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')"
+            ondrop="event.preventDefault();this.classList.remove('drag-over');handleUploadDrop(event)">
+            <input type="file" id="up-file" accept="image/*,video/*" style="display:none" onchange="handleUploadFile(this.files[0])">
+            <i class="fa fa-cloud-upload" id="upZoneIcon" style="font-size:28px;color:var(--purple-lt)"></i>
+            <p id="upZoneText" style="margin-top:8px">点击或拖拽上传</p>
+            <p style="font-size:10px;color:var(--muted);margin-top:4px">图片：JPG / PNG / WebP · 视频：MP4 / WebM</p>
           </div>
-          <img id="up-preview" class="upload-preview">
+          <!-- 图片预览 -->
+          <img id="up-preview" class="upload-preview" style="display:none">
+          <!-- 视频预览 -->
+          <video id="up-video-preview" controls style="display:none;width:100%;border-radius:8px;margin-top:8px;max-height:200px;background:#000"></video>
+          <!-- 文件信息条 -->
+          <div id="upFileInfo" style="display:none;background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;margin-top:8px;font-size:12px;color:var(--muted);display:none">
+            <i class="fa fa-file-o"></i> <span id="upFileName"></span> &nbsp;·&nbsp; <span id="upFileSize"></span>
+          </div>
         </div>
         <div class="cs-section">
           <span class="cs-label"><i class="fa fa-pencil"></i> 作品标题</span>
           <input type="text" class="form-input" id="workTitleUp" placeholder="给你的作品起个名字…">
         </div>
         <div class="cs-section">
-          <span class="cs-label"><i class="fa fa-align-left"></i> 描述</span>
-          <textarea class="prompt-area" id="upDesc" rows="3" placeholder="作品描述、创作背景…"></textarea>
+          <span class="cs-label"><i class="fa fa-tag"></i> 类型标签</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="tag-chip" onclick="addUpTag(this,'风景')">🌄 风景</span>
+            <span class="tag-chip" onclick="addUpTag(this,'人物')">👤 人物</span>
+            <span class="tag-chip" onclick="addUpTag(this,'动漫')">🎌 动漫</span>
+            <span class="tag-chip" onclick="addUpTag(this,'写实')">📷 写实</span>
+            <span class="tag-chip" onclick="addUpTag(this,'艺术')">🎨 艺术</span>
+            <span class="tag-chip" onclick="addUpTag(this,'视频')">🎬 视频</span>
+          </div>
+        </div>
+        <div class="cs-section">
+          <span class="cs-label"><i class="fa fa-align-left"></i> 作品描述</span>
+          <textarea class="prompt-area" id="upDesc" rows="2" placeholder="简单描述这个作品…" style="min-height:0"></textarea>
         </div>
       </div>
 
@@ -798,18 +819,17 @@ select option{background:var(--card2)}
           <div id="videoBgmBar" style="position:absolute;bottom:48px;left:0;right:0;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);padding:8px 14px;display:none;align-items:center;gap:10px">
             <i class="fa fa-music" style="color:var(--purple-lt);flex-shrink:0"></i>
             <select id="bgmSelect" style="flex:1;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:#fff;padding:4px 8px;font-size:12px;outline:none" onchange="changeBGM()">
-              <option value="">— 无背景音乐 —</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-ukulele.mp3">🌟 轻快 Ukulele</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-sunny.mp3">☀️ 阳光轻音乐</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-romantic.mp3">💖 浪漫钢琴</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-epic.mp3">⚡ 史诗气势</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-dreams.mp3">✨ 梦幻氛围</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-jazz.mp3">🎷 爵士 Jazz</option>
-              <option value="https://www.bensound.com/bensound-music/bensound-anewbeginning.mp3">🌸 治愈系</option>
+              <option value="">🔇 无背景音乐</option>
+              <option value="romantic">💖 浪漫钢琴</option>
+              <option value="dreamy">✨ 梦幻氛围</option>
+              <option value="calm">🌊 舒缓冥想</option>
+              <option value="epic">⚡ 史诗磅礴</option>
+              <option value="jazz">🎷 爵士律动</option>
+              <option value="cute">🌸 清新可爱</option>
             </select>
             <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
               <i class="fa fa-volume-down" style="color:var(--muted);font-size:11px"></i>
-              <input type="range" id="bgmVolume" min="0" max="100" value="40" style="width:70px;accent-color:var(--purple)" oninput="setBGMVolume(this.value)">
+              <input type="range" id="bgmVolumeSlider" min="0" max="100" value="40" style="width:70px;accent-color:var(--purple)" oninput="setBGMVolume(this.value)">
               <i class="fa fa-volume-up" style="color:var(--muted);font-size:11px"></i>
             </div>
           </div>
@@ -2097,94 +2117,158 @@ function previewUpload(previewId, input){
 }
 
 // ══════════════════════════════════════════
-//  背景音乐 BGM 系统
+//  背景音乐 BGM — Web Audio API 本地合成
+//  完全不依赖外部URL，浏览器原生支持
 // ══════════════════════════════════════════
-var _bgmPlaying = false;
+var _bgmCtx      = null;  // AudioContext
+var _bgmNodes    = [];    // 当前播放节点
+var _bgmPlaying  = false;
+var _bgmVolGain  = null;  // 总音量节点
+var _bgmPreset   = '';    // 当前预设名
+var _bgmScheduled= null;  // 循环定时器
 
-function getBgmAudio(){ return el('bgmAudio'); }
+// 音乐预设：[名称, 和弦列表(频率数组), BPM, 波形]
+var BGM_PRESETS = {
+  '': null,
+  'romantic': {
+    name:'💖 浪漫钢琴', bpm:72, wave:'sine',
+    chords:[[261,329,392],[293,369,440],[220,277,349],[246,311,392]],
+    bass:[65.4,73.4,55,61.7]
+  },
+  'dreamy': {
+    name:'✨ 梦幻氛围', bpm:60, wave:'sine',
+    chords:[[261,311,392],[293,349,440],[246,311,369],[220,293,349]],
+    bass:[65.4,73.4,61.7,55]
+  },
+  'epic': {
+    name:'⚡ 史诗磅礴', bpm:100, wave:'sawtooth',
+    chords:[[130,196,261],[146,220,293],[164,246,329],[174,261,349]],
+    bass:[65.4,73.4,82.4,87.3]
+  },
+  'calm': {
+    name:'🌊 舒缓冥想', bpm:52, wave:'sine',
+    chords:[[174,220,261],[196,246,293],[207,261,311],[220,277,329]],
+    bass:[43.6,49,54.9,55]
+  },
+  'jazz': {
+    name:'🎷 爵士律动', bpm:88, wave:'triangle',
+    chords:[[261,311,369,440],[293,349,415,493],[246,293,369,415],[220,277,349,415]],
+    bass:[65.4,73.4,61.7,55]
+  },
+  'cute': {
+    name:'🌸 清新可爱', bpm:120, wave:'triangle',
+    chords:[[523,659,784],[587,739,880],[493,622,784],[440,554,659]],
+    bass:[130,146,123,110]
+  }
+};
 
-function toggleBGMBar(){
-  var bar = el('videoBgmBar');
-  if(!bar) return;
-  var isOpen = bar.style.display === 'flex';
-  bar.style.display = isOpen ? 'none' : 'flex';
-  if(!isOpen && !_bgmPlaying){
-    // 打开时若有选曲且视频在播放，自动开始
-    var vid = el('resultVideo');
-    if(vid && !vid.paused) startBGM();
-  }
-}
-
-function changeBGM(){
-  var sel = el('bgmSelect');
-  var audio = getBgmAudio();
-  if(!sel || !audio) return;
-  var url = sel.value;
-  if(!url){
-    stopBGM();
-    return;
-  }
-  var vid = el('resultVideo');
-  audio.src = url;
-  audio.load();
-  // 只在视频播放时才开始
-  if(vid && !vid.paused){
-    audio.play().catch(function(e){ console.warn('[BGM]', e.message); });
-    _bgmPlaying = true;
-    showBgmIndicator(true);
-  }
+function getBgmCtx(){
+  if(!_bgmCtx){ try{ _bgmCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  return _bgmCtx;
 }
 
 function startBGM(){
-  var audio = getBgmAudio();
-  var sel   = el('bgmSelect');
-  if(!audio || !sel || !sel.value) return;
-  if(!audio.src || audio.src !== sel.value){
-    audio.src = sel.value;
-    audio.load();
+  var preset = BGM_PRESETS[_bgmPreset];
+  if(!preset){ return; }
+  stopBGM();
+  var ctx = getBgmCtx();
+  if(!ctx) return;
+  if(ctx.state === 'suspended') ctx.resume();
+
+  // 总音量
+  _bgmVolGain = ctx.createGain();
+  var vol = parseFloat((el('bgmVolumeSlider')||{}).value || 40) / 100;
+  _bgmVolGain.gain.value = vol * 0.25;  // 整体降低避免过响
+  _bgmVolGain.connect(ctx.destination);
+
+  _bgmPlaying = true;
+  showBgmIndicator(true);
+
+  var secPerBeat = 60 / preset.bpm;
+  var chordLen   = secPerBeat * 2;  // 每个和弦持续2拍
+  var totalLen   = chordLen * preset.chords.length;
+  var chordIdx   = 0;
+
+  function scheduleChord(){
+    if(!_bgmPlaying) return;
+    var now = ctx.currentTime;
+    var chord = preset.chords[chordIdx % preset.chords.length];
+    var bassFreq = preset.bass[chordIdx % preset.bass.length];
+
+    // 和弦音
+    chord.forEach(function(freq, fi){
+      var osc  = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type      = preset.wave;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.3/(fi+1), now+0.1);
+      gain.gain.linearRampToValueAtTime(0.15/(fi+1), now+chordLen*0.6);
+      gain.gain.linearRampToValueAtTime(0, now+chordLen-0.05);
+      osc.connect(gain); gain.connect(_bgmVolGain);
+      osc.start(now); osc.stop(now+chordLen);
+      _bgmNodes.push(osc);
+    });
+
+    // 低音
+    var bassOsc  = ctx.createOscillator();
+    var bassGain = ctx.createGain();
+    bassOsc.type = 'sine';
+    bassOsc.frequency.value = bassFreq;
+    bassGain.gain.setValueAtTime(0, now);
+    bassGain.gain.linearRampToValueAtTime(0.5, now+0.05);
+    bassGain.gain.linearRampToValueAtTime(0.2, now+chordLen*0.4);
+    bassGain.gain.linearRampToValueAtTime(0, now+chordLen-0.05);
+    bassOsc.connect(bassGain); bassGain.connect(_bgmVolGain);
+    bassOsc.start(now); bassOsc.stop(now+chordLen);
+    _bgmNodes.push(bassOsc);
+
+    chordIdx++;
+    _bgmScheduled = setTimeout(function(){
+      if(_bgmPlaying) scheduleChord();
+    }, (chordLen - 0.1) * 1000);
   }
-  audio.play().then(function(){
-    _bgmPlaying = true;
-    showBgmIndicator(true);
-  }).catch(function(e){ console.warn('[BGM play]', e.message); });
+
+  scheduleChord();
 }
 
 function stopBGM(){
-  var audio = getBgmAudio();
-  if(audio){ audio.pause(); }
   _bgmPlaying = false;
+  if(_bgmScheduled){ clearTimeout(_bgmScheduled); _bgmScheduled=null; }
+  _bgmNodes.forEach(function(n){ try{n.stop();}catch(e){} });
+  _bgmNodes = [];
+  if(_bgmVolGain){ try{_bgmVolGain.disconnect();}catch(e){} _bgmVolGain=null; }
   showBgmIndicator(false);
 }
 
 function syncBGM(videoIsPlaying){
-  if(videoIsPlaying){
-    var sel = el('bgmSelect');
-    if(sel && sel.value) startBGM();
-  } else {
-    stopBGM();
-  }
+  if(videoIsPlaying && _bgmPreset){ startBGM(); }
+  else { stopBGM(); }
+}
+
+function changeBGM(){
+  var sel = el('bgmSelect');
+  if(!sel) return;
+  _bgmPreset = sel.value;
+  var vid = el('resultVideo');
+  if(_bgmPreset && vid && !vid.paused){ startBGM(); }
+  else { stopBGM(); }
 }
 
 function setBGMVolume(val){
-  var audio = getBgmAudio();
-  if(audio) audio.volume = val/100;
+  if(_bgmVolGain){ _bgmVolGain.gain.value = (val/100) * 0.25; }
+}
+
+function toggleBGMBar(){
+  var bar=el('videoBgmBar');
+  if(!bar) return;
+  var isOpen = bar.style.display==='flex';
+  bar.style.display = isOpen?'none':'flex';
 }
 
 function showBgmIndicator(on){
-  var ind = el('bgmIndicator');
-  if(ind){ ind.style.display = on ? 'inline-block' : 'none'; }
-}
-
-// 同步到弹窗视频播放器
-function openVideoPlayerWithBGM(src, title, creator, createdAt){
-  openVideoPlayer(src, title, creator, createdAt);
-  var modalVid = el('modalVideo');
-  if(modalVid && !modalVid._bgmBound){
-    modalVid._bgmBound = true;
-    modalVid.addEventListener('play',  function(){ var a=getBgmAudio(); if(a&&el('bgmSelect')&&el('bgmSelect').value) startBGM(); });
-    modalVid.addEventListener('pause', function(){ stopBGM(); });
-    modalVid.addEventListener('ended', function(){ stopBGM(); });
-  }
+  var ind=el('bgmIndicator');
+  if(ind){ ind.className='bgm-indicator'+(on?' show':''); }
 }
 
 function resetResult(){
@@ -2471,25 +2555,62 @@ async function startGenerate(){
 
   if(mode === 'upload'){
     var upFile = el('up-file') && el('up-file').files && el('up-file').files[0];
-    if(!upFile){ showToast('error','请选择要上传的文件'); return; }
-    el('genStepLabel').textContent = '上传文件中…';
-    el('genStepSub') && (el('genStepSub').textContent = '');
+    if(!upFile){ showToast('error','请先选择要上传的文件'); return; }
+
+    var isVidFile = upFile.type.startsWith('video/');
     el('genBtn').disabled = true;
     el('resultPlaceholder').style.display = 'none';
     el('genProgressWrap').style.display   = 'block';
     el('resultImg').style.display         = 'none';
+    el('resultVideoWrap').style.display   = 'none';
     el('resultActions').style.display     = 'none';
+    el('submitNotice').style.display      = 'none';
+    el('genStepLabel').textContent = isVidFile ? '上传视频中…' : '上传图片中…';
+    el('genStepSub') && (el('genStepSub').textContent = '');
+    startProgressAnim(isVidFile);
+
     try{
-      var upUrl = await uploadToImgBB(upFile);
-      finishProgressAnim();
-      _lastResult = { url: upUrl, mode: mode, isVideo: false };
-      setTimeout(function(){
-        el('genProgressWrap').style.display = 'none';
-        el('resultImg').src = upUrl;
-        el('resultImg').style.display = 'block';
-        el('resultActions').style.display = 'flex';
-      }, 400);
+      var upUrl;
+      if(isVidFile){
+        // 视频：用 Blob URL 本地展示，同时上传缩略图到 ImgBB
+        upUrl = URL.createObjectURL(upFile);
+        // 尝试用 ImgBB 上传视频封面（截第一帧）
+        var thumbUrl = await captureVideoThumb(upFile).catch(function(){ return upUrl; });
+        finishProgressAnim();
+        _lastResult = { url: upUrl, thumbUrl: thumbUrl, mode: mode, isVideo: true, isLocalBlob: true };
+        setTimeout(function(){
+          el('genProgressWrap').style.display   = 'none';
+          el('resultVideoWrap').style.display   = 'block';
+          el('resultVideoPlayOverlay').style.display = 'none';
+          var vid = el('resultVideo');
+          vid.src = upUrl;
+          vid.load();
+          vid.play().catch(function(){});
+          var bgmBtn = el('bgmToggleBtn'); if(bgmBtn) bgmBtn.style.display='block';
+          el('resultActions').style.display = 'flex';
+          var sb=el('saveWorkBtn'); if(sb){ sb.disabled=false; sb.className='btn btn-primary'; sb.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
+          var pb=el('submitPublicBtn'); if(pb) pb.style.display='none';
+          el('submitNotice').style.display='none';
+          autoSaveWork();
+        }, 400);
+      } else {
+        // 图片：上传到 ImgBB 获取永久 URL
+        upUrl = await uploadToImgBB(upFile);
+        finishProgressAnim();
+        _lastResult = { url: upUrl, mode: mode, isVideo: false };
+        setTimeout(function(){
+          el('genProgressWrap').style.display = 'none';
+          el('resultImg').src = upUrl;
+          el('resultImg').style.display = 'block';
+          el('resultActions').style.display = 'flex';
+          var sb=el('saveWorkBtn'); if(sb){ sb.disabled=false; sb.className='btn btn-primary'; sb.innerHTML='<i class="fa fa-save"></i> 保存到素材库'; }
+          var pb=el('submitPublicBtn'); if(pb) pb.style.display='none';
+          el('submitNotice').style.display='none';
+          autoSaveWork();
+        }, 400);
+      }
     } catch(e){
+      clearInterval(_progInterval);
       el('genProgressWrap').style.display = 'none';
       el('resultPlaceholder').style.display = 'flex';
       showToast('error','上传失败: ' + e.message);
@@ -2586,6 +2707,92 @@ async function startGenerate(){
       el('genBtn').disabled = false;
     });
 }
+// ── 上传面板辅助函数 ─────────────────────────────────────────
+function handleUploadDrop(e){
+  var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if(file) handleUploadFile(file);
+}
+
+function handleUploadFile(file){
+  if(!file) return;
+  var isVid = file.type.startsWith('video/');
+  var isImg = file.type.startsWith('image/');
+  if(!isVid && !isImg){ showToast('error','请上传图片或视频文件'); return; }
+
+  // 更新区域图标和文字
+  var icon = el('upZoneIcon');
+  var text = el('upZoneText');
+  if(icon) icon.className = 'fa fa-check-circle';
+  if(icon) icon.style.color = 'var(--green)';
+  if(text) text.textContent = file.name;
+
+  // 文件信息
+  var info = el('upFileInfo');
+  if(info){
+    info.style.display='flex';
+    el('upFileName').textContent = file.name;
+    el('upFileSize').textContent = (file.size/1024/1024).toFixed(1)+' MB';
+  }
+
+  // 预览
+  el('up-preview').style.display='none';
+  el('up-video-preview').style.display='none';
+  var url = URL.createObjectURL(file);
+  if(isImg){
+    var img=el('up-preview'); img.src=url; img.style.display='block';
+  } else {
+    var vid=el('up-video-preview'); vid.src=url; vid.style.display='block'; vid.load();
+  }
+
+  // 自动填写标题
+  var titleEl = el('workTitleUp');
+  if(titleEl && !titleEl.value){
+    titleEl.value = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g,' ');
+  }
+
+  // 手动设置 file input（拖拽时需要）
+  try{
+    var dt = new DataTransfer(); dt.items.add(file);
+    el('up-file').files = dt.files;
+  }catch(e){}
+}
+
+function addUpTag(chip, tag){
+  var desc = el('upDesc');
+  if(desc && !desc.value.includes(tag)){
+    desc.value = (desc.value ? desc.value+', ' : '') + tag;
+  }
+  chip.style.borderColor='var(--purple)'; chip.style.color='var(--purple-lt)';
+}
+
+// 视频截第一帧作缩略图
+function captureVideoThumb(file){
+  return new Promise(function(resolve, reject){
+    var vid = document.createElement('video');
+    var url = URL.createObjectURL(file);
+    vid.src = url; vid.muted = true; vid.preload='metadata';
+    vid.onloadeddata = function(){
+      vid.currentTime = 0.5;
+    };
+    vid.onseeked = function(){
+      try{
+        var canvas = document.createElement('canvas');
+        canvas.width  = Math.min(vid.videoWidth,  1024);
+        canvas.height = Math.min(vid.videoHeight, 1024);
+        canvas.getContext('2d').drawImage(vid, 0,0,canvas.width,canvas.height);
+        canvas.toBlob(function(blob){
+          if(!blob){ reject('no blob'); return; }
+          var thumbFile = new File([blob],'thumb.jpg',{type:'image/jpeg'});
+          uploadToImgBB(thumbFile).then(resolve).catch(reject);
+        }, 'image/jpeg', 0.85);
+        URL.revokeObjectURL(url);
+      }catch(e){ reject(e); }
+    };
+    vid.onerror = function(){ reject('video load error'); };
+    vid.load();
+  });
+}
+
 function downloadResult(){
   if(!_lastResult) return;
   var ext = _lastResult.isVideo ? '.mp4' : '.jpg';
@@ -2742,17 +2949,14 @@ async function saveUserWork(){
       id:         matId,
       work_id:    _savedWorkId,
       title:      title,
-      src:        _lastResult.url,
-      video_src:  isVideo ? _lastResult.url : null,
-      thumb:      _lastResult.url,
+      src:        _lastResult.isLocalBlob ? (_lastResult.thumbUrl||_lastResult.url) : _lastResult.url,
+      video_src:  isVideo && !_lastResult.isLocalBlob ? _lastResult.url : null,
+      thumb:      _lastResult.thumbUrl || _lastResult.url,
       mode:       mode,
       media_type: isVideo ? 'video' : 'image',
       creator:    currentUser.username,
       created_at: now,
-      likes:      0,
-      starred:    false,
-      recommended:false,
-      status:     'pending'
+      likes:      0, starred:false, recommended:false, status:'pending'
     };
     await sPost('user_materials', matRow);
     MY_MATS.unshift(Object.assign({}, matRow));
@@ -3119,7 +3323,7 @@ function stopTTS(){
 // 调用 API TTS，获取音频 URL 后播放
 async function speakWithAPI(text, onEnd){
   // 使用公共中文女声参考 URL（可在角色设置中覆盖）
-  var refUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'; // placeholder
+  // TTS API needs a reference voice URL; using browser speechSynthesis as primary
   // 优先用角色配置的 voice_ref_url
   var char = chatChars.find(function(c){ return c.id===activeChatChar; });
   var spkUrl = (char && char.voice_ref_url) || null;
@@ -3663,7 +3867,6 @@ function toggleFaq(elQ){
   if(!isOpen){elQ.classList.add('open');a.classList.add('open');}
 }
 
-function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 </script>
 </body>
