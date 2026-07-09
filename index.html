@@ -2774,8 +2774,20 @@ function addUpTag(chip, tag){
 
 // 视频截第一帧作缩略图
 // ── 上传视频到 Supabase Storage ─────────────────────────────
+async function ensureBucket(){
+  // 尝试创建 bucket（如已存在会返回 409，忽略即可）
+  try{
+    await fetch(SUPA_URL + '/storage/v1/bucket', {
+      method: 'POST',
+      headers: { 'apikey': SUPA_KEY, 'Authorization': 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'user-uploads', name: 'user-uploads', public: true, file_size_limit: 52428800 })
+    });
+  } catch(e){ /* ignore */ }
+}
+
 async function uploadVideoToStorage(file){
-  var ext  = file.name.split('.').pop().toLowerCase() || 'mp4';
+  await ensureBucket();
+  var ext  = (file.name.split('.').pop()||'mp4').toLowerCase();
   var name = 'videos/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
   var resp = await fetch(SUPA_URL + '/storage/v1/object/user-uploads/' + name, {
     method: 'POST',
@@ -2789,9 +2801,13 @@ async function uploadVideoToStorage(file){
   });
   if(!resp.ok){
     var t = await resp.text();
-    throw new Error('视频存储失败 ' + resp.status + ': ' + t.slice(0,100));
+    var msg = '';
+    try{ msg = JSON.parse(t).message || t; } catch(e){ msg = t; }
+    if(msg.includes('Bucket not found')){
+      throw new Error('请先在 Supabase → Storage 手动创建名为 user-uploads 的公开存储桶');
+    }
+    throw new Error('视频上传失败 ' + resp.status + ': ' + msg.slice(0,100));
   }
-  // 返回公开 URL
   return SUPA_URL + '/storage/v1/object/public/user-uploads/' + name;
 }
 
