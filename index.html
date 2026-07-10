@@ -2548,7 +2548,7 @@ async function startGenerate(){
     var upFile = el('up-file') && el('up-file').files && el('up-file').files[0];
     if(!upFile){ showToast('error','请先选择要上传的文件'); return; }
 
-    var isVidFile = upFile.type.startsWith('video/');
+    var isVidFile = upFile.type.startsWith('video/') || /\.(mp4|webm|mov|avi|mkv|m4v|flv|wmv|3gp)$/i.test(upFile.name);
     el('genBtn').disabled = true;
     el('resultPlaceholder').style.display = 'none';
     el('genProgressWrap').style.display   = 'block';
@@ -2585,8 +2585,9 @@ async function startGenerate(){
         }
         setTimeout(function(){
           el('genProgressWrap').style.display   = 'none';
+          el('resultImg').style.display         = 'none';
           el('resultVideoWrap').style.display   = 'block';
-          el('resultVideoPlayOverlay').style.display = 'none';
+          var ov0=el('resultVideoPlayOverlay'); if(ov0) ov0.style.display='none';
           var vid = el('resultVideo');
           vid.src = videoUrl;
           vid.load();
@@ -2722,8 +2723,8 @@ function handleUploadDrop(e){
 
 function handleUploadFile(file){
   if(!file) return;
-  var isVid = file.type.startsWith('video/');
-  var isImg = file.type.startsWith('image/');
+  var isVid = file.type.startsWith('video/') || /\.(mp4|webm|mov|avi|mkv|m4v|flv|wmv|3gp)$/i.test(file.name);
+  var isImg = file.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(file.name);
   if(!isVid && !isImg){ showToast('error','请上传图片或视频文件'); return; }
 
   // 更新区域图标和文字
