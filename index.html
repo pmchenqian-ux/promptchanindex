@@ -2571,18 +2571,32 @@ async function startGenerate(){
           videoUrl = await uploadVideoToStorage(upFile);
         } catch(storageErr){
           console.warn('[Storage]', storageErr.message);
-          // 存储桶不存在或上传失败，回退到 Blob URL（仅本次会话有效）
-          videoUrl = URL.createObjectURL(upFile);
-          showToast('info','⚠️ 视频存储桶未配置，视频仅在当前会话可用。请在 Supabase Storage 创建 user-uploads 公开桶。');
+          // Storage 失败：本地预览，但不存入 DB（blob URL 在 Vercel 上会被拒绝）
+          var localBlobUrl = URL.createObjectURL(upFile);
+          el('genStepLabel').textContent = '生成视频封面…';
+          var thumbOnly = await captureVideoThumb(upFile).catch(function(){ return null; });
+          finishProgressAnim();
+          _lastResult = { url: localBlobUrl, thumbUrl: thumbOnly, mode: mode, isVideo: true, isLocalBlob: true };
+          showToast('error','视频存储失败：' + storageErr.message.slice(0,80) + '\n请在 Supabase Storage 创建 user-uploads 公开桶后重新上传');
+          setTimeout(function(){
+            el('genProgressWrap').style.display   = 'none';
+            el('resultImg').style.display         = 'none';
+            el('resultVideoWrap').style.display   = 'block';
+            var ov0=el('resultVideoPlayOverlay'); if(ov0) ov0.style.display='none';
+            var vid = el('resultVideo'); vid.src = localBlobUrl; vid.load(); vid.play().catch(function(){});
+            el('resultActions').style.display = 'flex';
+            // 不调用 autoSaveWork，blob URL 不能存入 DB
+            var sb=el('saveWorkBtn');
+            if(sb){ sb.disabled=true; sb.className='btn btn-ghost'; sb.innerHTML='<i class="fa fa-exclamation-triangle"></i> 需配置存储桶'; }
+          }, 400);
+          el('genBtn').disabled = false;
+          return;  // 退出 upload 分支，不继续执行后面的代码
         }
-        // 截取视频缩略图上传到 ImgBB
+        // Storage 上传成功，生成缩略图
         el('genStepLabel').textContent = '生成视频封面…';
         thumbUrl2 = await captureVideoThumb(upFile).catch(function(){ return null; });
         finishProgressAnim();
-        _lastResult = { url: videoUrl, thumbUrl: thumbUrl2||null, mode: mode, isVideo: true, isLocalBlob: !videoUrl.startsWith('http') };
-        if(_lastResult.isLocalBlob){
-          showToast('info','⚠️ 请先在 Supabase 创建 user-uploads 存储桶，视频才能永久保存');
-        }
+        _lastResult = { url: videoUrl, thumbUrl: thumbUrl2||null, mode: mode, isVideo: true, isLocalBlob: false };
         setTimeout(function(){
           el('genProgressWrap').style.display   = 'none';
           el('resultImg').style.display         = 'none';
@@ -2852,6 +2866,10 @@ function downloadResult(){
 // ── 自动保存（生成完成后静默写入 DB）────────────────────────────
 async function autoSaveWork(){
   if(!currentUser || !_lastResult) return;
+  // 阻止 blob URL 写入 DB（Vercel 上会被拒绝，且不跨会话）
+  if(_lastResult.isLocalBlob || (_lastResult.url && _lastResult.url.startsWith('blob:'))){
+    showToast('error','视频无法保存：请先在 Supabase Storage 创建 user-uploads 公开桶'); return;
+  }
   var btn = el('saveWorkBtn');
   if(btn){ btn.disabled=true; btn.innerHTML='<i class="fa fa-spinner fa-spin"></i> 自动保存中…'; }
 
