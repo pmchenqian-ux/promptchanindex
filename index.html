@@ -3255,19 +3255,15 @@ async function loadChatHistoryFromDB(charId){
 }
 
 // ── 保存单条消息到 DB ──
-async function saveMsgToDB(charId, charName, role, content){
-  if(!currentUser) return;
+function saveMsgToDB(charId, charName, role, content){
+  // 仅存内存+localStorage，不写数据库（速度优化）
   try{
-    await sPost('chat_messages',{
-      user_id:  currentUser.id,
-      username: currentUser.username,
-      char_id:  charId,
-      char_name:charName,
-      role:     role,
-      content:  content,
-      chat_mode:chatMode
-    });
-  } catch(e){ console.warn('saveMsgToDB failed:', e.message); }
+    var key = 'pc_hist_'+charId;
+    var hist = JSON.parse(localStorage.getItem(key)||'[]');
+    hist.push({role:role,content:content.slice(0,500),t:Date.now()});
+    if(hist.length>60) hist=hist.slice(-50);
+    localStorage.setItem(key, JSON.stringify(hist));
+  }catch(e){}
 }
 
 // ── 保存角色到 DB ──
@@ -3463,6 +3459,26 @@ async function speakWithAPI(text, onEnd){
   speakBrowser(text, onEnd);
 }
 
+// 预加载语音列表（加快首次朗读）
+var _cachedVoice = null;
+function getZhVoice(){
+  if(_cachedVoice) return _cachedVoice;
+  var vs = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  _cachedVoice = vs.find(function(v){ return v.lang.startsWith('zh') && /female|woman|girl|xiao/i.test(v.name); })
+    || vs.find(function(v){ return v.lang.startsWith('zh') && v.localService; })
+    || vs.find(function(v){ return v.lang.startsWith('zh'); })
+    || null;
+  return _cachedVoice;
+}
+if(window.speechSynthesis){
+  window.speechSynthesis.onvoiceschanged = function(){
+    _cachedVoice = null; // 重置缓存
+    getZhVoice();       // 立即缓存
+  };
+  // 页面加载后立即尝试缓存
+  setTimeout(function(){ getZhVoice(); }, 500);
+}
+
 function speakBrowser(text, onEnd){
   if(!text){ if(onEnd) setTimeout(onEnd, 100); return; }
   // 确保 speechSynthesis 可用
@@ -3476,24 +3492,11 @@ function speakBrowser(text, onEnd){
 
   var utt = new SpeechSynthesisUtterance(clean);
   utt.lang = 'zh-CN';
-  utt.rate  = 1.0;
-  utt.pitch = 1.1;
+  utt.rate  = 1.15;  // 稍快
+  utt.pitch = 1.05;
   utt.volume = 1.0;
-
-  // 选择中文女声
-  var selectVoice = function(){
-    var vs = window.speechSynthesis.getVoices();
-    if(vs.length){
-      var v = vs.find(function(v){ return v.lang.startsWith('zh') && /female|woman|girl|xiao|xiaoxiao/i.test(v.name); })
-            || vs.find(function(v){ return v.lang.startsWith('zh') && v.localService; })
-            || vs.find(function(v){ return v.lang.startsWith('zh'); });
-      if(v){ utt.voice=v; utt.lang=v.lang; }
-    }
-  };
-  selectVoice();
-  if(window.speechSynthesis.getVoices().length===0){
-    window.speechSynthesis.onvoiceschanged = function(){ selectVoice(); window.speechSynthesis.onvoiceschanged=null; };
-  }
+  var v = getZhVoice();
+  if(v){ utt.voice=v; utt.lang=v.lang; }
 
   var finished = false;
   var done = function(){
@@ -3586,92 +3589,108 @@ function finalizeStreamBubble(bubble, text, char){
 //  SEND CHAT — AI女友 API（同步提交+轮询，通过 Worker 代理）
 // ═══════════════════════════════════════════════════════════
 async function chatAIReply(text, charId, char, sysContent, bubbleEl){
+  // 取最近8条历史
   var history = (chatHistory[charId] || []).slice(-8);
   var msgs = history.map(function(m){
     return {role: m.role==='assistant'?'assistant':'user', content: m.content};
   });
-  var promptWithCtx = '['+sysContent+'] 用户说：'+text;
-  var params = {
-    model: 'aigf-rpmax-kto',
-    prompt: promptWithCtx,
-    extra: { temperature:0.85, max_tokens:300, messages: msgs.length>=2 ? msgs : undefined }
-  };
-  if(!params.extra.messages) delete params.extra.messages;
 
-  var MAX_RETRIES = 3;
-  for(var attempt=1; attempt<=MAX_RETRIES; attempt++){
-    if(attempt>1){
-      if(bubbleEl) updateStreamBubble(bubbleEl, '⏳ 重试中 ('+attempt+'/'+MAX_RETRIES+')…');
-      await new Promise(function(res){ setTimeout(res,2000); });
-    }
-    var reply = '';
+  // 构建 prompt（含角色设定）
+  var prompt = '['+sysContent+']\n\n用户：'+text;
 
-    // 方式1：SSE 流式（直连API，有打字机效果）
-    try{
-      var ctrl = new AbortController();
-      var st = setTimeout(function(){ ctrl.abort(); }, 20000);
-      var sr = await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
-        method:'POST', signal:ctrl.signal,
-        headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
-        body:JSON.stringify({templateId:TPLS.aigf,clientUserId:'user-'+(currentUser?currentUser.id:'anon'),parameters:params})
-      });
-      clearTimeout(st);
-      if(sr.ok && sr.body){
-        var reader=sr.body.getReader(), decoder=new TextDecoder(), buf='';
-        outer: while(true){
-          var _r=await reader.read(); if(_r.done) break;
-          buf+=decoder.decode(_r.value,{stream:true});
-          var parts=buf.split('\n'); buf=parts.pop();
-          for(var pi=0;pi<parts.length;pi++){
-            var ln=parts[pi].trim();
-            if(ln==='data: [DONE]') break outer;
-            if(ln.startsWith('data: ')){
-              try{
-                var obj=JSON.parse(ln.slice(6));
-                var delta=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
-                if(delta&&delta.content){ reply+=delta.content; if(bubbleEl) updateStreamBubble(bubbleEl,reply); }
-              }catch(pe){}
-            }
+  var reply = '';
+
+  // ── 方法1：直连 API SSE 流式（最快，有打字机效果）──
+  try{
+    var ctrl1 = new AbortController();
+    var t1 = setTimeout(function(){ ctrl1.abort(); }, 15000);
+    var sr = await fetch('https://frw-dreamaiai-api2.aiaiartist.com/api/frwapi/v1/tasks/stream',{
+      method:'POST', signal:ctrl1.signal,
+      headers:{'X-Api-Key':API_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        templateId:TPLS.aigf,
+        clientUserId:'u'+(currentUser?currentUser.id:'0'),
+        parameters:{
+          model:'aigf-rpmax-kto', prompt:prompt,
+          extra:{ temperature:0.85, max_tokens:250, messages:msgs.length>=2?msgs:undefined }
+        }
+      })
+    });
+    clearTimeout(t1);
+    if(sr.ok && sr.body){
+      var reader=sr.body.getReader(), dec=new TextDecoder(), buf='';
+      done: while(true){
+        var rr=await reader.read(); if(rr.done) break;
+        buf+=dec.decode(rr.value,{stream:true});
+        var pts=buf.split('\n'); buf=pts.pop();
+        for(var pi=0;pi<pts.length;pi++){
+          var ln=pts[pi].trim();
+          if(ln==='data: [DONE]') break done;
+          if(ln.startsWith('data: ')){
+            try{
+              var obj=JSON.parse(ln.slice(6));
+              var d=obj.choices&&obj.choices[0]&&obj.choices[0].delta;
+              if(d&&d.content){ reply+=d.content; if(bubbleEl) updateStreamBubble(bubbleEl,reply); }
+            }catch(e){}
           }
         }
-        if(reply){ console.log('[SSE ok #'+attempt+']',reply.slice(0,40)); return reply; }
       }
-    }catch(e){ console.log('[SSE #'+attempt+' failed]',e.message||e.name); }
-
-    // 方式2：同步提交 + 轮询
-    try{
-      var resp = await apiFetch('/api/frwapi/v1/tasks',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({templateId:TPLS.aigf,clientUserId:'user-'+(currentUser?currentUser.id:'anon'),parameters:params})
-      });
-      if(!resp.ok) throw {message:'HTTP '+resp.status, retryable:true};
-      var sub = await resp.json();
-      if(!sub.success) throw {message:sub.message||'提交失败', retryable:true};
-      var taskId = sub.data.taskId;
-      if(bubbleEl) updateStreamBubble(bubbleEl,'⏳ AI 思考中…');
-      var result = await new Promise(function(resolve,reject){
-        var tries=0;
-        var tick=function(){
-          pollTask(taskId).then(function(d){
-            if(d.status==='completed') resolve(d);
-            else if(d.status==='failed') reject({message:d.errorMessage||'任务失败',retryable:!!d.retryable||(d.errorCode==='upstream_retryable')});
-            else if(++tries>=18) reject({message:'超时',retryable:true});
-            else setTimeout(tick,3500);
-          }).catch(function(){ if(++tries>=18) reject({message:'网络超时',retryable:true}); else setTimeout(tick,4000); });
-        };
-        tick();
-      });
-      reply=(result.metadata&&result.metadata.transcript)||
-            (result.results&&result.results[0]&&(result.results[0].content||result.results[0].text))||
-            (result.choices&&result.choices[0]&&result.choices[0].message&&result.choices[0].message.content)||'';
-      if(reply){ console.log('[Poll ok #'+attempt+']',reply.slice(0,40)); return reply; }
-    }catch(err){
-      var e2=typeof err==='object'?err:{message:String(err),retryable:false};
-      console.warn('[#'+attempt+' failed]',e2.message,'retryable:',e2.retryable);
-      if(!e2.retryable||attempt>=MAX_RETRIES) throw new Error(e2.message);
+      if(reply) return reply;
     }
-  }
-  throw new Error('服务繁忙，请稍后再试');
+  }catch(e){ console.log('[SSE]',e.message||e.name); }
+
+  // ── 方法2：Claude API（快速备用，无需轮询）──
+  try{
+    if(bubbleEl) updateStreamBubble(bubbleEl,'⏳ 思考中…');
+    var cr = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001', max_tokens:250,
+        system: sysContent,
+        messages: msgs.length
+          ? msgs
+          : [{role:'user',content:text}]
+      })
+    });
+    if(cr.ok){
+      var cd=await cr.json();
+      reply=(cd.content&&cd.content[0]&&cd.content[0].text)||'';
+      if(reply) return reply;
+    }
+  }catch(e){ console.log('[Claude]',e.message); }
+
+  // ── 方法3：Worker 提交+轮询（最慢，最后备用）──
+  try{
+    var resp=await apiFetch('/api/frwapi/v1/tasks',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        templateId:TPLS.aigf, clientUserId:'u'+(currentUser?currentUser.id:'0'),
+        parameters:{model:'aigf-rpmax-kto',prompt:prompt,extra:{temperature:0.85,max_tokens:250}}
+      })
+    });
+    if(resp.ok){
+      var sub=await resp.json();
+      if(sub.success){
+        if(bubbleEl) updateStreamBubble(bubbleEl,'⏳ AI生成中…');
+        var result=await new Promise(function(res,rej){
+          var t=0;
+          var tick=function(){
+            pollTask(sub.data.taskId).then(function(d){
+              if(d.status==='completed') res(d);
+              else if(d.status==='failed') rej(new Error(d.errorMessage||'失败'));
+              else if(++t>12) rej(new Error('超时'));
+              else setTimeout(tick,3000);
+            }).catch(function(){ if(++t>12) rej(new Error('超时')); else setTimeout(tick,4000); });
+          };
+          tick();
+        });
+        reply=(result.metadata&&result.metadata.transcript)||(result.results&&result.results[0]&&result.results[0].content)||'';
+        if(reply) return reply;
+      }
+    }
+  }catch(e){ console.log('[Poll]',e.message); }
+
+  throw new Error('AI服务暂时不可用，请稍后重试');
 }
 
 async function sendChat(){
