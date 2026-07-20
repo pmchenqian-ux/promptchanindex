@@ -2600,7 +2600,9 @@ async function startGenerate(){
           var thumbOnly = await captureVideoThumb(upFile).catch(function(){ return null; });
           finishProgressAnim();
           _lastResult = { url: localBlobUrl, thumbUrl: thumbOnly, mode: mode, isVideo: true, isLocalBlob: true };
-          showToast('error','视频存储失败：' + storageErr.message.slice(0,80) + '\n请在 Supabase Storage 创建 user-uploads 公开桶后重新上传');
+          var _em = storageErr.message || '';
+          var _hint = _em.includes('row-level security') ? 'Supabase Storage RLS 限制，请执行开放策略 SQL' : _em.includes('Bucket not found') ? '请先在 Supabase 创建 user-uploads 公开桶' : _em.slice(0,60);
+          showToast('error', '视频存储失败：' + _hint);
           setTimeout(function(){
             el('genProgressWrap').style.display   = 'none';
             el('resultImg').style.display         = 'none';
