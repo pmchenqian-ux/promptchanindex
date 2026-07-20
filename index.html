@@ -3375,48 +3375,80 @@ function toggleVoiceInput(){
 function startVoiceInput(onResult){
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SR){ showToast('error','浏览器不支持语音识别，请使用 Chrome'); return false; }
-  _speechRec = new SR();
-  _speechRec.lang = 'zh-CN';
-  _speechRec.interimResults = true;
-  _speechRec.continuous = false;
-  _speechRec.onresult = function(e){
-    var interim='', final='';
-    for(var i=e.resultIndex;i<e.results.length;i++){
-      if(e.results[i].isFinal) final += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
+
+  // 每次彻底销毁旧实例，防止多轮后状态卡死
+  stopVoiceInput();
+  // 短暂等待让浏览器释放麦克风
+  setTimeout(function(){
+    var rec;
+    try{ rec = new SR(); }catch(e){ showToast('error','语音初始化失败，请刷新页面'); return; }
+    _speechRec = rec;
+    rec.lang = 'zh-CN';
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.maxAlternatives = 1;
+
+    var fired = false;
+    var finish = function(text, isFinal){
+      if(fired && !text) return;
+      if(isFinal) fired = true;
+      if(onResult){
+        onResult(text, isFinal);
+        if(isFinal) stopVoiceInput();
+      } else {
+        if(text) el('chatInput').value = text;
+        if(isFinal){ stopVoiceInput(); if(text) sendChat(); }
+      }
+    };
+
+    rec.onresult = function(e){
+      var interim='', final='';
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal) final+=e.results[i][0].transcript;
+        else interim+=e.results[i][0].transcript;
+      }
+      finish(final||interim, !!final);
+    };
+    rec.onerror = function(e){
+      console.warn('[Voice error]', e.error);
+      stopVoiceInput();
+      if(e.error!=='no-speech' && !onResult) showToast('error','语音识别失败: '+e.error);
+    };
+    rec.onend = function(){
+      if(!fired) stopVoiceInput();
+    };
+
+    try{
+      rec.start();
+      _isRecording = true;
+      if(!onResult){
+        var mb=el('chatMicBtn'); if(mb) mb.classList.add('recording');
+        var mi=el('chatMicIcon'); if(mi) mi.className='fa fa-microphone-slash';
+        var bar=el('voiceStatusBar'); if(bar) bar.style.display='flex';
+      }
+    }catch(startErr){
+      console.warn('[Voice start]', startErr.message);
+      _speechRec=null;
+      showToast('error','麦克风占用中，请稍后重试');
     }
-    if(onResult){
-      onResult(final||interim, !!final);
-    } else {
-      el('chatInput').value = final||interim;
-      el('voiceStatusText').textContent = interim ? '识别中: '+interim.slice(0,20) : '正在聆听…';
-      if(final){ stopVoiceInput(); sendChat(); }
-    }
-  };
-  _speechRec.onerror = function(e){
-    stopVoiceInput();
-    if(!onResult) showToast('error','语音识别失败: '+e.error);
-  };
-  _speechRec.onend = function(){ if(!onResult) stopVoiceInput(); };
-  try{ _speechRec.start(); } catch(e){ return false; }
-  _isRecording = true;
-  if(!onResult){
-    var mb=el('chatMicBtn'); if(mb) mb.classList.add('recording');
-    var mi=el('chatMicIcon'); if(mi) mi.className='fa fa-microphone-slash';
-    var bar=el('voiceStatusBar'); if(bar) bar.style.display='flex';
-  }
+  }, onResult ? 0 : 100);  // 非通话模式稍等100ms确保旧实例释放
   return true;
 }
 
 function stopVoiceInput(){
   _isRecording = false;
-  if(_speechRec){ try{_speechRec.abort();}catch(e){} _speechRec=null; }
+  if(_speechRec){
+    var r = _speechRec; _speechRec = null;
+    r.onresult = r.onerror = r.onend = null;  // 先清空回调防止副作用
+    try{ r.abort(); }catch(e){}
+  }
   var mb=el('chatMicBtn'); if(mb) mb.classList.remove('recording');
   var mi=el('chatMicIcon'); if(mi) mi.className='fa fa-microphone';
   var bar=el('voiceStatusBar'); if(bar) bar.style.display='none';
 }
 
 // ═══════════════════════════════════════════════════════════
+//  TTS — 浏览器语音合成（主）+ API语音合成（可选）
 //  TTS — 浏览器语音合成（主）+ API语音合成（可选）
 // ═══════════════════════════════════════════════════════════
 var _ttsAudio   = null;
@@ -3614,143 +3646,66 @@ function deepFindText(obj, depth){
 }
 
 async function chatAIReply(text, charId, char, sysContent, bubbleEl){
-  // SSE 和直连 API 被 CORS 拦截，统一走 Worker 代理
-  var history = (chatHistory[charId] || []).slice(-6);
-  var prompt = '[角色：'+sysContent+']\n用户：'+text;
+  if(bubbleEl) updateStreamBubble(bubbleEl, '⏳ 发送中…');
 
-  if(bubbleEl) updateStreamBubble(bubbleEl, '⏳ 连接中…');
+  // 仅保留最近4条历史，每条限100字，避免 prompt 过长
+  var history = (chatHistory[charId]||[]).slice(-4).map(function(m){
+    return {role:m.role==='assistant'?'assistant':'user', content:(m.content||'').slice(0,100)};
+  });
 
-  // 提交任务（通过 Worker，使用最简参数避免服务端报错）
-  // 尝试3种参数组合，从简到繁
-  var paramSets = [
-    // 方案1：最简参数（最稳定）
-    { model:'aigf-rpmax-kto', prompt: prompt },
-    // 方案2：带历史
-    { model:'aigf-rpmax-kto', prompt: prompt,
-      extra:{ temperature:0.85, max_tokens:200,
-        messages: history.length>=2
-          ? history.map(function(m){ return {role:m.role==='assistant'?'assistant':'user',content:m.content.slice(0,200)}; })
-          : undefined }
-    },
-    // 方案3：不指定模型
-    { prompt: prompt, extra:{ temperature:0.9, max_tokens:200 } }
-  ];
+  // 精简 prompt：角色名 + 用户消息（不传完整 sysContent 避免超长）
+  var charName = (char&&char.name)||'AI';
+  var prompt = '你是'+charName+'。'+((char&&char.description)||'').slice(0,60)+'。用户说：'+text;
 
-  var resp, sub;
-  for(var pi=0; pi<paramSets.length; pi++){
-    var ps = paramSets[pi];
-    if(ps.extra && ps.extra.messages===undefined) delete ps.extra.messages;
-    try{
-      resp = await apiFetch('/api/frwapi/v1/tasks',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ templateId:TPLS.aigf, clientUserId:'u'+(currentUser?currentUser.id:'0'), parameters:ps })
-      });
-      if(resp.ok){
-        sub = await resp.json();
-        if(sub.success){ console.log('[Chat] submit ok with params['+pi+']'); break; }
+  // 提交任务（最简参数，已验证有效）
+  var resp = await apiFetch('/api/frwapi/v1/tasks',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      templateId:  TPLS.aigf,
+      clientUserId:'u'+(currentUser?currentUser.id:'0'),
+      parameters:{
+        model: 'aigf-rpmax-kto',
+        prompt: prompt
       }
-    }catch(e){ console.warn('[Chat] param set '+pi+' failed:', e.message); }
-    sub = null;
-  }
+    })
+  });
 
-  if(!sub || !sub.success) throw new Error((sub&&sub.message)||'所有参数方案均提交失败');
+  if(!resp.ok) throw new Error('提交失败 HTTP '+resp.status);
+  var sub = await resp.json();
+  if(!sub||!sub.success) throw new Error((sub&&sub.message)||'提交失败');
   var taskId = sub.data.taskId;
 
-  // 快速轮询（前3次1.5s，之后3s）
+  // 轮询（使用 clearTimeout 避免残留 timer 累积）
   var result = await new Promise(function(resolve, reject){
-    var tries = 0;
+    var tries=0, timer=null;
+    var cancelled=false;
     var tick = function(){
+      if(cancelled) return;
       pollTask(taskId).then(function(d){
         if(d.status==='completed'){
           resolve(d);
         } else if(d.status==='failed'){
-          var ferr = d.errorMessage||d.error_message||d.message||'任务失败';
-          console.warn('[Chat poll failed]', ferr, 'errorCode:', d.errorCode);
-          reject(new Error(ferr));
+          reject(new Error(d.errorMessage||d.error_message||'任务失败'));
         } else {
-          if(bubbleEl) updateStreamBubble(bubbleEl, '⏳ AI思考中'+'…'.repeat(Math.min(tries+1,3)));
           tries++;
-          var delay = tries<=3 ? 1500 : 3000;
-          if(tries>16) reject(new Error('响应超时'));
-          else setTimeout(tick, delay);
+          if(tries>14){ reject(new Error('响应超时，请重试')); return; }
+          var delay = tries<=4 ? 2000 : 3500;
+          timer = setTimeout(tick, delay);
         }
-      }).catch(function(e){
+      }).catch(function(){
         tries++;
-        if(tries>8) reject(new Error('网络错误'));
-        else setTimeout(tick, 3000);
+        if(tries>6){ reject(new Error('网络错误，请重试')); return; }
+        timer = setTimeout(tick, 4000);
       });
     };
     tick();
   });
 
-  // 打印完整结果用于调试
-  console.log('[Chat full result]', JSON.stringify(result));
-
-  // 提取回复文本——穷举所有可能字段
-  var reply = '';
-
-  // 格式0（正确格式）: data.result 字段（AI女友模板实际返回格式）
-  if(result.result && typeof result.result === 'string' && result.result.length > 1){
-    reply = result.result;
-  }
-
-  // 格式1: metadata 各字段
-  if(result.metadata){
-    reply = result.metadata.transcript || result.metadata.text || result.metadata.content
-         || result.metadata.reply || result.metadata.response || result.metadata.message || '';
-  }
-
-  // 格式2: results 数组
-  if(!reply && result.results){
-    for(var ri=0; ri<result.results.length; ri++){
-      var r0 = result.results[ri];
-      var candidate = r0.content||r0.text||r0.message||r0.reply||r0.response||r0.transcript||'';
-      // 如果是文本 URL（非图片/音视频），尝试获取内容
-      if(!candidate && r0.url){
-        var u = r0.url;
-        if(!u.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm|mp3|wav|ogg)(\?|$)/i)){
-          candidate = u; // 暂时用 URL 本身，下面会尝试 fetch
-        }
-      }
-      if(candidate){ reply = candidate; break; }
-    }
-  }
-
-  // 格式3: choices (OpenAI 格式)
-  if(!reply && result.choices && result.choices[0]){
-    var c0 = result.choices[0];
-    reply = (c0.message&&c0.message.content) || c0.text || c0.content || c0.delta&&c0.delta.content || '';
-  }
-
-  // 格式4: 顶层字段
-  if(!reply){
-    reply = result.output||result.text||result.content||result.response||result.reply||result.transcript||'';
-  }
-
-  // 格式5: 如果 reply 是一个 URL（文本文件），尝试 fetch 获取内容
-  if(reply && reply.startsWith('http') && !reply.match(/\.(jpg|jpeg|png|gif|mp4|mp3|wav)(\?|$)/i)){
-    try{
-      var tr = await fetch(reply); 
-      if(tr.ok){
-        var txt = await tr.text();
-        // 如果返回的是纯文本（不是 HTML/JSON），用它作为回复
-        if(txt && txt.length < 2000 && !txt.trim().startsWith('<') && !txt.trim().startsWith('{')){
-          reply = txt.trim();
-        }
-      }
-    }catch(fe){ console.warn('[fetch text url]', fe.message); }
-  }
-
-  if(!reply){
-    // 把原始结构显示出来帮助调试
-    var rawStr = JSON.stringify(result, null, 2);
-    console.error('[Chat raw]', rawStr);
-    // 尝试深度搜索任何非空字符串字段
-    var found = deepFindText(result);
-    if(found){ return found; }
-    // 显示原始数据
-    return '[DEBUG] API返回结构:\n' + rawStr.slice(0, 400);
-  }
+  // 提取文本（已确认字段为 result.result）
+  var reply = (result&&result.result) || '';
+  if(!reply) reply = deepFindText(result);
+  if(!reply) throw new Error('AI未返回文本，请重试');
   return reply.trim();
 }
 
