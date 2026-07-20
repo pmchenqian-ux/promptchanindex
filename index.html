@@ -1688,10 +1688,14 @@ function renderExplore(){
     });
 
   } else if(filter==='new'){
-    // 最新：近2天 approved/published 内容，按时间倒序
+    // 最新：近2周内的公开内容，按时间倒序
+    // 包含：用户端生成且审核通过(origin=user, status=approved)
+    //      管理端生成且公开展示(origin=admin, status=approved/published)
     visible = ALL_WORKS.filter(function(w){
-      if(!isWorkVisible(w)||w.status==='private') return false;
-      return isRecent(w,2);
+      if(w.status==='unpublished'||w.status==='rejected'||w.status==='pending'||w.status==='private') return false;
+      if(w.origin==='admin' && !(w.status==='approved'||w.status==='published')) return false;
+      if(w.origin==='user'  && w.status!=='approved') return false;
+      return isRecent(w, 14);  // 最近2周
     });
     visible.sort(function(a,b){
       var ta=new Date((a.created_at||a.createdAt||'').replace(' ','T')).getTime()||0;
@@ -1722,7 +1726,7 @@ function renderExplore(){
 
   el('exploreCount')&&(el('exploreCount').textContent=visible.length+' 件作品');
 
-  var emptyMsgs={trend:'暂无内容，去创作吧！',new:'最近2天暂无新内容',admin:'管理员尚未设置推荐内容',user:'暂无用户创作内容'};
+  var emptyMsgs={trend:'暂无内容，去创作吧！',new:'最近2周暂无新内容',admin:'管理员尚未设置推荐内容',user:'暂无用户创作内容'};
   if(!visible.length){
     grid.innerHTML='<div class="empty-state" style="column-span:all"><i class="fa fa-image"></i><h3>暂无内容</h3><p>'+(emptyMsgs[filter]||'暂无')+'</p></div>';
     return;
@@ -1862,7 +1866,7 @@ function renderMyWorks(){
     // 获取视频 URL
     var vidUrl = (w.video_src||'');
     if(vidUrl.startsWith('blob:')) vidUrl='';
-    if(!vidUrl && isVideo){ var raw=w.src||''; if(raw&&!raw.startsWith('blob:')&&/\.(mp4|webm|mov|avi)(\.\?|$)/i.test(raw)) vidUrl=raw; }
+    if(!vidUrl && isVideo){ var raw=w.src||''; if(raw&&!raw.startsWith('blob:')&&/\.(mp4|webm|mov|avi)(\?|$)/i.test(raw)) vidUrl=raw; }
 
     // 获取图片缩略图（过滤视频URL和blob）
     var thumb = w.thumb||w.src||'';
@@ -1872,14 +1876,26 @@ function renderMyWorks(){
     // 媒体 HTML
     var media='';
     if(isVideo){
-      if(thumb) media='<img src="'+escHtml(thumb)+'" style="width:100%;height:100%;object-fit:cover;display:block">';
-      else if(vidUrl) media='<video src="'+escHtml(vidUrl)+'" muted preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover;display:block"></video>';
-      else media='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d0b14;color:rgba(255,255,255,.2)"><i class="fa fa-film" style="font-size:40px"></i></div>';
+      var fbId = 'fb'+i+'_'+(w.id||Math.random().toString(36).slice(2,6));
+      if(thumb){
+        // 缩略图加载失败时，自动回退到 video 截帧，若也无则显示占位符
+        media='<img src="'+escHtml(thumb)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" '
+          +'onerror="'
+          +(vidUrl
+            ? 'this.replaceWith(Object.assign(document.createElement(\'video\'),{src:\''+escHtml(vidUrl)+'\',muted:true,playsInline:true,style:\'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block\'}))'
+            : 'this.replaceWith(Object.assign(document.createElement(\'div\'),{innerHTML:\'<i class=&quot;fa fa-film&quot; style=&quot;font-size:40px&quot;></i>\',style:\'position:absolute;inset:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d0b14;color:rgba(255,255,255,.2)\'}))'
+          )
+          +'">';
+      } else if(vidUrl){
+        media='<video src="'+escHtml(vidUrl)+'" muted preload="metadata" playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"></video>';
+      } else {
+        media='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0d0b14;color:rgba(255,255,255,.2)"><i class="fa fa-film" style="font-size:40px"></i></div>';
+      }
       media+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:48px;height:48px;border-radius:50%;background:rgba(98,75,255,.85);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(98,75,255,.5)"><i class="fa fa-play" style="color:#fff;font-size:18px;margin-left:3px"></i></div></div>';
       media+='<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;z-index:2">视频</div>';
     } else {
       var imgUrl=thumb||('https://picsum.photos/seed/'+(w.id||i)+'/400/500');
-      media='<img src="'+escHtml(imgUrl)+'" style="width:100%;height:100%;object-fit:cover;display:block">';
+      media='<img src="'+escHtml(imgUrl)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onerror="this.src=\'https://picsum.photos/seed/'+i+'/400/500\'">';
     }
 
     var timeStr=(w.createdAt||w.created_at||'').toString().slice(0,16).replace('T',' ');
@@ -2021,8 +2037,14 @@ function renderMaterials(){
     var mediaHtml = '';
     if(isVideo){
       if(thumb){
-        // ✅ 有真实图片缩略图
-        mediaHtml = '<img src="'+escHtml(thumb)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">';
+        // ✅ 有真实图片缩略图，加载失败时回退到视频截帧或占位
+        mediaHtml = '<img src="'+escHtml(thumb)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" '
+          +'onerror="'
+          +(vidSrc
+            ? 'this.replaceWith(Object.assign(document.createElement(\'video\'),{src:\''+escHtml(vidSrc)+'\',muted:true,playsInline:true,style:\'position:absolute;inset:0;width:100%;height:100%;object-fit:cover\'}))'
+            : 'this.style.display=&quot;none&quot;'
+          )
+          +'">';
       } else if(vidSrc){
         // ✅ 无缩略图但有视频 URL：用 <video> 截第一帧
         mediaHtml = '<video src="'+escHtml(vidSrc)+'" muted preload="metadata" playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>';
@@ -2037,7 +2059,7 @@ function renderMaterials(){
       mediaHtml += '<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;z-index:3">视频</div>';
     } else {
       var imgUrl = thumb || fallback;
-      mediaHtml = '<img src="'+escHtml(imgUrl)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">';
+      mediaHtml = '<img src="'+escHtml(imgUrl)+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onerror="this.src=\''+fallback+'\'">';
     }
 
     // 额外徽章
@@ -3451,11 +3473,13 @@ function stopVoiceInput(){
 //  TTS — 浏览器语音合成（主）+ API语音合成（可选）
 //  TTS — 浏览器语音合成（主）+ API语音合成（可选）
 // ═══════════════════════════════════════════════════════════
-var _ttsAudio   = null;
-var _ttsSpeaking= false;
-var _ttsOnEnd   = null;  // 播放完成回调
+var _ttsAudio    = null;
+var _ttsSpeaking = false;
+var _ttsOnEnd    = null;
+var _ttsKeepAlive= null;  // 全局追踪 keepAlive interval，防止多轮叠加
 
 function stopTTS(){
+  if(_ttsKeepAlive){ clearInterval(_ttsKeepAlive); _ttsKeepAlive=null; }
   if(_ttsAudio){ _ttsAudio.pause(); _ttsAudio.src=''; _ttsAudio=null; }
   window.speechSynthesis && window.speechSynthesis.cancel();
   _ttsSpeaking = false;
@@ -3534,6 +3558,7 @@ function speakBrowser(text, onEnd){
   var done = function(){
     if(finished) return; finished=true;
     _ttsSpeaking=false;
+    if(_ttsKeepAlive){ clearInterval(_ttsKeepAlive); _ttsKeepAlive=null; }
     var i=el('ttsPlayingIndicator'); if(i) i.style.display='none';
     if(onEnd) onEnd();
   };
@@ -3558,10 +3583,14 @@ function speakBrowser(text, onEnd){
   // 延迟50ms确保cancel()已生效
   setTimeout(function(){
     try{
+      // 先清除旧的 keepAlive（防止多轮叠加导致冲突）
+      if(_ttsKeepAlive){ clearInterval(_ttsKeepAlive); _ttsKeepAlive=null; }
       window.speechSynthesis.speak(utt);
       // Chrome bug workaround: 每14秒 pause/resume 防止静音
-      var keepAlive = setInterval(function(){
-        if(!_ttsSpeaking||!window.speechSynthesis){ clearInterval(keepAlive); return; }
+      _ttsKeepAlive = setInterval(function(){
+        if(!_ttsSpeaking||!window.speechSynthesis){
+          clearInterval(_ttsKeepAlive); _ttsKeepAlive=null; return;
+        }
         window.speechSynthesis.pause();
         window.speechSynthesis.resume();
       }, 14000);
