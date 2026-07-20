@@ -1833,52 +1833,78 @@ function renderMyWorks(){
     grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-lock"></i><h3>请先登录</h3></div>';
     return;
   }
+  var seen = {}, merged = [];
+  function addW(w){ if(w.id && !seen[w.id]){ seen[w.id]=1; merged.push(w); } }
+  MY_WORKS.forEach(addW);
+  ALL_WORKS.filter(function(w){ return w.creator===currentUser.username; }).forEach(addW);
 
-  // Merge my works from ALL_WORKS and MY_WORKS (may have pending from queue)
-  var seen = {};
-  var merged = [];
-  function add(w){ if(!seen[w.id]){ seen[w.id]=1; merged.push(w); } }
-  MY_WORKS.forEach(add);
-  ALL_WORKS.filter(function(w){ return w.creator===currentUser.username; }).forEach(add);
-
-  var filtered = worksFilter === 'all' ? merged
-    : merged.filter(function(w){ return w.status === worksFilter; });
-
-  el('myWorksCount').textContent = '共 ' + merged.length + ' 件作品'
-    + (filtered.length !== merged.length ? ' · 当前筛选 ' + filtered.length + ' 件' : '');
+  var filtered = worksFilter==='all' ? merged : merged.filter(function(w){ return w.status===worksFilter; });
+  el('myWorksCount').textContent = '共 '+merged.length+' 件作品'+(filtered.length!==merged.length?' · 当前筛选 '+filtered.length+' 件':'');
 
   if(!filtered.length){
-    var msg = worksFilter === 'all'
+    var msg = worksFilter==='all'
       ? '<p>去<span style="color:#b09fff;cursor:pointer" onclick="showPage(\'create\')">创作页面</span>生成你的第一件作品吧！</p>'
       : '<p>没有符合条件的作品</p>';
-    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-th-large"></i><h3>暂无作品</h3>' + msg + '</div>';
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><i class="fa fa-th-large"></i><h3>暂无作品</h3>'+msg+'</div>';
     return;
   }
 
-  grid.innerHTML = '';
-  var sLabel = {pending:'待审核',approved:'已通过',rejected:'已拒绝',published:'已发布',unpublished:'已下架',private:'私密'};
-  var sCls   = {pending:'s-pending',approved:'s-approved',rejected:'s-rejected',published:'s-published',unpublished:'s-rejected',private:'s-pending'};
+  var sLabel={pending:'待审核',approved:'已通过',rejected:'已拒绝',published:'已发布',unpublished:'已下架',private:'私密'};
+  var sCls={pending:'s-pending',approved:'s-approved',rejected:'s-rejected',published:'s-published',unpublished:'s-rejected',private:'s-pending'};
+  var html = '';
 
-  filtered.forEach(function(w, i){
-    var card = document.createElement('div');
-    card.className = 'work-card';
-    var imgSrc = w.src || w.thumb || ('https://picsum.photos/seed/' + (w.id||i) + '/400/500');
-    card.innerHTML =
-      '<div class="work-img-wrap">'
-      + '<img src="' + imgSrc + '" onerror="this.src=\'https://picsum.photos/seed/' + i + '/400/500\'">'
-      + '<span class="work-status-badge ' + (sCls[w.status]||'s-pending') + '">' + (sLabel[w.status]||w.status||'—') + '</span>'
-      + '</div>'
-      + '<div class="work-info">'
-      + '<div class="work-title">' + (w.title||'无标题') + '</div>'
-      + '<div class="work-meta"><i class="fa fa-clock-o"></i> ' + (w.createdAt||w.created_at||'—') + ' &nbsp;<i class="fa fa-heart-o"></i> ' + (w.likes||0) + '</div>'
-      + '</div>';
-    if(w.status !== 'pending'){
-      card.onclick = function(){ openDetail(w); };
+  filtered.forEach(function(w,i){
+    // 判断视频
+    var isVideo = w.type==='video' || w.media_type==='video'
+      || (w.video_src&&!w.video_src.startsWith('blob:'))
+      || (w.mode&&/txt2vid|img2vid|video/i.test(w.mode));
+
+    // 获取视频 URL
+    var vidUrl = (w.video_src||'');
+    if(vidUrl.startsWith('blob:')) vidUrl='';
+    if(!vidUrl && isVideo){ var raw=w.src||''; if(raw&&!raw.startsWith('blob:')&&/\.(mp4|webm|mov|avi)(\.\?|$)/i.test(raw)) vidUrl=raw; }
+
+    // 获取图片缩略图（过滤视频URL和blob）
+    var thumb = w.thumb||w.src||'';
+    if(thumb.startsWith('blob:')) thumb='';
+    if(thumb&&/\.(mp4|webm|mov|avi|mkv|m4v)(\?|$)/i.test(thumb)) thumb='';
+
+    // 媒体 HTML
+    var media='';
+    if(isVideo){
+      if(thumb) media='<img src="'+escHtml(thumb)+'" style="width:100%;height:100%;object-fit:cover;display:block">';
+      else if(vidUrl) media='<video src="'+escHtml(vidUrl)+'" muted preload="metadata" playsinline style="width:100%;height:100%;object-fit:cover;display:block"></video>';
+      else media='<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#0d0b14;color:rgba(255,255,255,.2)"><i class="fa fa-film" style="font-size:40px"></i></div>';
+      media+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:48px;height:48px;border-radius:50%;background:rgba(98,75,255,.85);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(98,75,255,.5)"><i class="fa fa-play" style="color:#fff;font-size:18px;margin-left:3px"></i></div></div>';
+      media+='<div style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.75);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;z-index:2">视频</div>';
     } else {
-      card.style.opacity = '.8';
-      card.title = '等待管理员审核';
+      var imgUrl=thumb||('https://picsum.photos/seed/'+(w.id||i)+'/400/500');
+      media='<img src="'+escHtml(imgUrl)+'" style="width:100%;height:100%;object-fit:cover;display:block">';
     }
-    grid.appendChild(card);
+
+    var timeStr=(w.createdAt||w.created_at||'').toString().slice(0,16).replace('T',' ');
+    html+='<div class="work-card" data-i="'+i+'" style="'+(w.status==='pending'?'opacity:.85':'')+'">'
+      +'<div class="work-img-wrap" style="position:relative;overflow:hidden">'+media
+      +'<span class="work-status-badge '+(sCls[w.status]||'s-pending')+'">'+escHtml(sLabel[w.status]||w.status||'—')+'</span>'
+      +'</div>'
+      +'<div class="work-info"><div class="work-title">'+escHtml(w.title||'无标题')+'</div>'
+      +'<div class="work-meta"><i class="fa fa-'+(isVideo?'film':'image')+'"></i> '+escHtml(w.mode||'—')+' &nbsp;<i class="fa fa-heart-o"></i> '+(w.likes||0)+'</div>'
+      +'</div></div>';
+  });
+
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.work-card').forEach(function(card,i){
+    var w=filtered[i]; if(!w) return;
+    var isVid=w.type==='video'||w.media_type==='video'
+      ||(w.video_src&&!w.video_src.startsWith('blob:'))
+      ||(w.mode&&/txt2vid|img2vid|video/i.test(w.mode));
+    var vs=(w.video_src||''); if(vs.startsWith('blob:')) vs='';
+    card.style.cursor=(isVid&&vs)||w.status!=='pending'?'pointer':'default';
+    card.onclick=function(){
+      if(isVid&&vs) openVideoPlayer(vs,w.title,w.creator,w.createdAt||w.created_at);
+      else if(w.status!=='pending') openDetail(w);
+    };
   });
 }
 
